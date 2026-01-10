@@ -24,13 +24,32 @@ This repository contains database query wrapper scripts for the Spark platform. 
 **Purpose:** Query the SparkPos PostgreSQL database
 **Credential Source:** Uses `DATABASE_URL_DEVELOP` environment variable
 
+### Spark Runner Tool
+```bash
+./sparkr.sh spb    # Build and run spark_backend (Rails server + worker)
+./sparkr.sh rq     # Build and run RequestManager (Java service)
+```
+
+**Purpose:** Build and run Spark services with auto-restart capability
+**Features:**
+- Kills previous instances before starting
+- Loads environment from `.env.local`
+- Auto-restarts on crash (RequestManager)
+- Runs worker and server together (spark_backend)
+
 ## Architecture
 
-Both scripts follow the same pattern:
-1. **Auto-discover repository location:** Searches within 3 levels of `$HOME` for git repositories matching the target remote URL suffix (`spark_backend.git` or `SparkPos.git`)
-2. **Validate credentials exist:** Only uses repositories that have a `.env.local` file present
-3. **Load environment variables:** Sources the discovered `.env.local` file
-4. **Execute query:** Runs the SQL query passed as the first argument
-5. **Return results:** Outputs results to stdout
+### Shared Repository Finder (`repo-finder.sh`)
+All scripts use a shared utility function `find_repo()` that:
+1. **Auto-discovers repository location:** Searches within 3 levels of `$HOME` for git repositories matching the target remote URL suffix
+2. **Validates credentials exist:** Only returns repositories that have a `.env.local` file present
+3. **Returns repository path:** Used by scripts to source environment variables and run commands
+
+### Script Pattern
+All scripts follow the same pattern:
+1. Source the `repo-finder.sh` utility
+2. Find target repository by git remote suffix (`spark_backend.git`, `SparkPos.git`, `RequestManager.git`)
+3. Load environment variables from the discovered `.env.local` file
+4. Execute the requested operation (query, build, run)
 
 **Key Design:** Scripts are location-agnostic - they dynamically find the correct repository by matching git remote URL suffix, making them portable across different development environments and directory structures.

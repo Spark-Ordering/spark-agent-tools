@@ -5,26 +5,11 @@
 
 set -e
 
-# Find SparkPos repository by git remote URL suffix
-find_sparkpos() {
-    local search_depth=3
-    local target_suffix="SparkPos.git"
+# Load repo finder utility
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/repo-finder.sh"
 
-    while IFS= read -r git_dir; do
-        local repo_dir=$(dirname "$git_dir")
-        local remote_url=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || echo "")
-
-        if [[ "$remote_url" == *"$target_suffix"* ]] && [[ -f "$repo_dir/.env.local" ]]; then
-            echo "$repo_dir"
-            return 0
-        fi
-    done < <(find "$HOME" -maxdepth $search_depth -type d -name ".git" 2>/dev/null)
-
-    echo "Error: SparkPos repository with .env.local not found within $search_depth levels of home directory" >&2
-    exit 1
-}
-
-SPARKPOS_DIR=$(find_sparkpos)
+SPARKPOS_DIR=$(find_repo "SparkPos.git")
 
 # Source env file
 source "$SPARKPOS_DIR/.env.local"
