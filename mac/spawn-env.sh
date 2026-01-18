@@ -14,15 +14,12 @@ echo ""
 
 # Step 1: Create Codespace with 16GB RAM
 echo "[1/5] Creating Codespace (16GB RAM)..."
-gh codespace create \
+CODESPACE=$(gh codespace create \
   --repo "$REPO" \
   --branch "$BRANCH" \
   --machine standardLinux32gb \
   --display-name "$ENV_NAME" \
-  --status
-
-# Get the codespace name
-CODESPACE=$(gh codespace list --repo "$REPO" --json name,displayName -q ".[] | select(.displayName==\"$ENV_NAME\") | .name")
+  2>&1 | tee /dev/stderr | tail -1)
 
 if [ -z "$CODESPACE" ]; then
   echo "Error: Failed to find Codespace"

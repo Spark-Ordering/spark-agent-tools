@@ -45,27 +45,17 @@ echo "Docker is ready!"
 # 4. PARALLEL SETUP - Run all heavy tasks concurrently
 echo "Starting parallel setup..."
 
-# Background job 1: Supabase (pulls many Docker images)
+# Background job 1: Supabase (pulls many Docker images) - runs independently
 (
   echo "[supabase] Starting Supabase..."
   cd sparkpos
   supabase start
+  touch /tmp/supabase-done
   echo "[supabase] Done!"
 ) &
 SUPABASE_PID=$!
 
-# Background job 2: Ruby setup (apt-get + bundle install)
-(
-  echo "[ruby] Installing MySQL dev libraries..."
-  sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
-  echo "[ruby] Running bundle install..."
-  cd spark_backend
-  bundle install
-  echo "[ruby] Done!"
-) &
-RUBY_PID=$!
-
-# Background job 3: Java setup
+# Background job 2: Java setup
 (
   echo "[java] Running mvn package..."
   cd RequestManager
@@ -74,7 +64,7 @@ RUBY_PID=$!
 ) &
 JAVA_PID=$!
 
-# Background job 4: Node setup
+# Background job 3: Node setup
 (
   echo "[node] Running npm install..."
   cd sparkpos
@@ -83,38 +73,31 @@ JAVA_PID=$!
 ) &
 NODE_PID=$!
 
-# Wait for all parallel jobs
-echo "Waiting for parallel jobs to complete..."
-wait $RUBY_PID
-echo "Ruby setup complete!"
-wait $JAVA_PID
-echo "Java setup complete!"
-wait $NODE_PID
-echo "Node setup complete!"
-wait $SUPABASE_PID
-echo "Supabase setup complete!"
+# Background job 4: Ruby setup -> immediately followed by rake tasks
+# This is the critical path, so we chain bundle -> rake without waiting for others
+(
+  echo "[ruby] Installing MySQL dev libraries..."
+  sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
+  echo "[ruby] Running bundle install..."
+  cd spark_backend
+  bundle install
+  echo "[ruby] Bundle done! Starting Rails setup..."
 
-# 5. Wait for MySQL and run migrations (depends on bundle install being done)
-echo "Waiting for MySQL to be ready..."
-until docker exec mysql mysqladmin ping -h localhost --silent; do
-  sleep 2
-done
-echo "MySQL is ready!"
+  # Wait for MySQL to be ready (needed for rake tasks)
+  echo "[ruby] Waiting for MySQL..."
+  until docker exec mysql mysqladmin ping -h localhost --silent 2>/dev/null; do
+    sleep 2
+  done
+  echo "[ruby] MySQL ready!"
 
-echo "Setting up spark_backend database..."
-cd spark_backend
-
-# Create .env.local with local MySQL config
-cat > .env.local << 'ENVEOF'
+  # Configure Rails for local development
+  cat > .env.local << 'ENVEOF'
 RAILS_ENV=development
 ENVEOF
 
-# Allow Codespace hosts in Rails (prevents "Blocked host" error)
-echo 'Rails.application.config.hosts << /.*\.app\.github\.dev/' >> config/environments/development.rb
+  echo 'Rails.application.config.hosts << /.*\.app\.github\.dev/' >> config/environments/development.rb
 
-# Patch database.yml to use TCP connection to Docker MySQL (remove socket, set credentials)
-# The original uses Rails.application.secrets and socket, we override for local Docker
-cat > config/database.yml << 'DBEOF'
+  cat > config/database.yml << 'DBEOF'
 default: &default
   adapter: mysql2
   encoding: utf8
@@ -138,9 +121,32 @@ test:
   password: root
 DBEOF
 
-bundle exec rake db:create db:migrate db:seed
-bundle exec rake assets:precompile
-cd ..
+  # Run migrations and asset precompilation
+  echo "[ruby] Running db:create db:migrate db:seed..."
+  bundle exec rake db:create db:migrate db:seed
+  echo "[ruby] Running assets:precompile..."
+  bundle exec rake assets:precompile
+  touch /tmp/rails-done
+  echo "[ruby] Rails setup complete!"
+) &
+RUBY_PID=$!
+
+# Wait for independent jobs (Java, Node)
+wait $JAVA_PID
+echo "Java setup complete!"
+wait $NODE_PID
+echo "Node setup complete!"
+
+# Wait for Ruby (critical path - includes rake tasks)
+wait $RUBY_PID
+echo "Ruby + Rails setup complete!"
+
+# Wait for Supabase if still running (it's independent but we want clean exit)
+if [ ! -f /tmp/supabase-done ]; then
+  echo "Waiting for Supabase to finish..."
+  wait $SUPABASE_PID
+fi
+echo "Supabase setup complete!"
 
 touch /tmp/setup-complete
 echo ""
