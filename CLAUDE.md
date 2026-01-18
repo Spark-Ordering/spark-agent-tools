@@ -2,6 +2,44 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Environment Detection
+
+To determine if running in a GitHub Codespace vs local Mac:
+```bash
+# Returns "codespace" or "local"
+[ -d /workspaces ] && echo "codespace" || echo "local"
+```
+
+## Repository Locations
+
+### In GitHub Codespaces
+When running in a Codespace, repos are at fixed paths - **no need for repo-finder**:
+
+| Repo | Path |
+|------|------|
+| spark_backend | `/workspaces/spark-agent-tools/spark_backend` |
+| SparkPos | `/workspaces/spark-agent-tools/sparkpos` |
+| RequestManager | `/workspaces/spark-agent-tools/RequestManager` |
+
+### On Local Mac
+Repos are typically at:
+- `~/Code/spark_backend`
+- `~/Code/SparkPos`
+- `~/Code/RequestManager`
+
+Or use `repo-finder.sh` to locate them dynamically.
+
+## Services in Codespace
+
+| Service | Port | URL |
+|---------|------|-----|
+| Rails (spark_backend) | 3000 | http://localhost:3000 |
+| Metro (SparkPos) | 8081 | http://localhost:8081 |
+| Supabase API | 54321 | http://localhost:54321 |
+| Supabase Postgres | 54322 | postgresql://postgres:postgres@localhost:54322/postgres |
+| Supabase Studio | 54323 | http://localhost:54323 |
+| MySQL | 3306 | mysql://root:root@localhost:3306 |
+
 ## Overview
 
 This repository contains database query wrapper scripts for the Spark platform. These scripts provide convenient access to MySQL (spark_backend) and PostgreSQL (SparkPos) databases by automatically loading credentials from environment files.
