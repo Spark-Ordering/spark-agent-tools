@@ -1,6 +1,6 @@
 {
   "name": "Spark Dev Environment",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-20.04",
   "features": {
     "ghcr.io/devcontainers/features/ruby:1": { "version": "3.0.5" },
     "ghcr.io/devcontainers/features/java:1": { "version": "21" },
