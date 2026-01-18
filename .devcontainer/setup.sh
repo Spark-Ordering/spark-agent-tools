@@ -3,11 +3,11 @@ set -e
 
 echo "=== Spark Development Environment Setup ==="
 
-# 1. Clone repos fresh
+# 1. Clone repos fresh (using HTTPS - Codespaces auto-inject GitHub token)
 echo "Cloning repositories..."
-git clone git@github.com:tecno40/spark_backend.git
-git clone git@github.com:Spark-Ordering/RequestManager.git
-git clone git@github.com:carlosdelivery/SparkPos.git sparkpos
+git clone https://github.com/tecno40/spark_backend.git
+git clone https://github.com/Spark-Ordering/RequestManager.git
+git clone https://github.com/carlosdelivery/SparkPos.git sparkpos
 
 # 2. Start MySQL in Docker
 echo "Starting MySQL..."

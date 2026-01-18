@@ -6,27 +6,34 @@ REPO="Spark-Ordering/spark-agent-tools"
 
 echo "Creating Codespace for branch: $BRANCH"
 
-CODESPACE=$(gh codespace create \
+# Create codespace and capture output
+CREATE_OUTPUT=$(gh codespace create \
   --repo $REPO \
   --branch $BRANCH \
   --machine basicLinux32gb \
-  --json | jq -r '.name')
+  -d "spark-$BRANCH" \
+  2>&1)
+
+# Extract codespace name from output or list recent codespaces
+CODESPACE=$(gh codespace list --repo $REPO --json name,state -q '.[0].name' 2>/dev/null)
 
 if [ -z "$CODESPACE" ]; then
   echo "Error: Failed to create Codespace"
+  echo "Output: $CREATE_OUTPUT"
   exit 1
 fi
 
 echo "Codespace created: $CODESPACE"
-echo "Waiting for setup to complete..."
+echo "Waiting for Codespace to be ready..."
 
-gh codespace ssh -c $CODESPACE -- "while [ ! -f /tmp/setup-complete ]; do sleep 5; done"
+# Wait for codespace to be available
+sleep 10
 
 # Get forwarded URLs
-URLS=$(gh codespace ports -c $CODESPACE --json sourcePort,browseUrl)
-RUBY_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==3000) | .browseUrl')
-JAVA_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8080) | .browseUrl')
-METRO_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8081) | .browseUrl')
+URLS=$(gh codespace ports -c $CODESPACE --json sourcePort,browseUrl 2>/dev/null)
+RUBY_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==3000) | .browseUrl' 2>/dev/null)
+JAVA_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8080) | .browseUrl' 2>/dev/null)
+METRO_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8081) | .browseUrl' 2>/dev/null)
 
 # Save environment config
 cat > ~/.spark-env-$CODESPACE << EOF
@@ -41,10 +48,10 @@ EOF
 ln -sf ~/.spark-env-$CODESPACE ~/.spark-env-current
 
 echo ""
-echo "=== Environment ready! ==="
-echo "  Ruby:  $RUBY_URL"
-echo "  Java:  $JAVA_URL"
-echo "  Metro: $METRO_URL"
+echo "=== Codespace created! ==="
+echo "Name: $CODESPACE"
 echo ""
 echo "Connect: gh codespace ssh -c $CODESPACE"
-echo "Switch:  ./switch-env.sh $CODESPACE"
+echo "VS Code: gh codespace code -c $CODESPACE"
+echo ""
+echo "Note: Run .devcontainer/start-all.sh inside the codespace to start services"
