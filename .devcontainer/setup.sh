@@ -3,6 +3,9 @@ set -e
 
 echo "=== Spark Development Environment Setup ==="
 
+# Export GH_TOKEN as GITHUB_TOKEN for gh CLI authentication
+export GITHUB_TOKEN="${GH_TOKEN}"
+
 # 1. Clone repos fresh (using gh CLI which handles auth automatically)
 echo "Cloning repositories..."
 gh repo clone tecno40/spark_backend
