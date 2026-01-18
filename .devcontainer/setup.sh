@@ -3,14 +3,21 @@ set -e
 
 echo "=== Spark Development Environment Setup ==="
 
-# Export GH_TOKEN as GITHUB_TOKEN for gh CLI authentication
-export GITHUB_TOKEN="${GH_TOKEN}"
+# Debug: Check if GH_TOKEN is available
+echo "Checking for GH_TOKEN..."
+if [ -z "$GH_TOKEN" ]; then
+  echo "ERROR: GH_TOKEN not found. Available env vars:"
+  env | grep -i token || echo "No token vars found"
+  env | grep -i gh || echo "No GH vars found"
+  exit 1
+fi
+echo "GH_TOKEN found (length: ${#GH_TOKEN})"
 
-# 1. Clone repos fresh (using gh CLI which handles auth automatically)
+# 1. Clone repos fresh using git with token authentication
 echo "Cloning repositories..."
-gh repo clone tecno40/spark_backend
-gh repo clone Spark-Ordering/RequestManager
-gh repo clone carlosdelivery/SparkPos sparkpos
+git clone "https://${GH_TOKEN}@github.com/tecno40/spark_backend.git"
+git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/RequestManager.git"
+git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos
 
 # 2. Start MySQL in Docker
 echo "Starting MySQL..."
