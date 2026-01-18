@@ -17,7 +17,7 @@
     },
     "codespaces": {
       "repositories": {
-        "tecno40/spark_backend": {
+        "Spark-Ordering/spark_backend": {
           "permissions": "read-write"
         },
         "Spark-Ordering/RequestManager": {

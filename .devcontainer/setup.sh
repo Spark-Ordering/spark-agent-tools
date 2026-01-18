@@ -15,7 +15,7 @@ echo "GH_TOKEN found (length: ${#GH_TOKEN})"
 
 # 1. Clone repos fresh using git with token authentication
 echo "Cloning repositories..."
-git clone "https://${GH_TOKEN}@github.com/tecno40/spark_backend.git"
+git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/spark_backend.git"
 git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/RequestManager.git"
 git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos
 
