@@ -1,57 +1,126 @@
 #!/bin/bash
 # Usage: ./spawn-env.sh [branch-name]
+# Fully automated: creates Codespace, waits for services, sets up port forwarding
 
-BRANCH=${1:-main}
+set -e
+
+BRANCH=${1:-master}
 REPO="Spark-Ordering/spark-agent-tools"
+ENV_NAME="spark-${BRANCH}"
 
-echo "Creating Codespace for branch: $BRANCH"
+echo "=== Spark Environment Spawner ==="
+echo "Branch: $BRANCH"
+echo ""
 
-# Create codespace and capture output
-CREATE_OUTPUT=$(gh codespace create \
-  --repo $REPO \
-  --branch $BRANCH \
-  --machine basicLinux32gb \
-  -d "spark-$BRANCH" \
-  2>&1)
+# Step 1: Create Codespace with 16GB RAM
+echo "[1/5] Creating Codespace (16GB RAM)..."
+gh codespace create \
+  --repo "$REPO" \
+  --branch "$BRANCH" \
+  --machine standardLinux32gb \
+  --display-name "$ENV_NAME" \
+  --status
 
-# Extract codespace name from output or list recent codespaces
-CODESPACE=$(gh codespace list --repo $REPO --json name,state -q '.[0].name' 2>/dev/null)
+# Get the codespace name
+CODESPACE=$(gh codespace list --repo "$REPO" --json name,displayName -q ".[] | select(.displayName==\"$ENV_NAME\") | .name")
 
 if [ -z "$CODESPACE" ]; then
-  echo "Error: Failed to create Codespace"
-  echo "Output: $CREATE_OUTPUT"
+  echo "Error: Failed to find Codespace"
   exit 1
 fi
 
-echo "Codespace created: $CODESPACE"
-echo "Waiting for Codespace to be ready..."
+echo "Codespace: $CODESPACE"
 
-# Wait for codespace to be available
-sleep 10
+# Step 2: Wait for setup to complete
+echo ""
+echo "[2/5] Waiting for setup to complete..."
+while true; do
+  if gh codespace ssh -c "$CODESPACE" -- "test -f /tmp/setup-complete" 2>/dev/null; then
+    echo "Setup complete!"
+    break
+  fi
+  echo "  Still setting up..."
+  sleep 15
+done
 
-# Get forwarded URLs
-URLS=$(gh codespace ports -c $CODESPACE --json sourcePort,browseUrl 2>/dev/null)
-RUBY_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==3000) | .browseUrl' 2>/dev/null)
-JAVA_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8080) | .browseUrl' 2>/dev/null)
-METRO_URL=$(echo $URLS | jq -r '.[] | select(.sourcePort==8081) | .browseUrl' 2>/dev/null)
+# Step 3: Wait for services to start
+echo ""
+echo "[3/5] Waiting for services to start..."
+while true; do
+  if gh codespace ssh -c "$CODESPACE" -- "test -f /tmp/services-started" 2>/dev/null; then
+    echo "Services started!"
+    break
+  fi
+  echo "  Starting services..."
+  sleep 5
+done
+
+# Step 4: Get port URLs
+echo ""
+echo "[4/5] Getting port URLs..."
+sleep 5  # Give ports time to register
+
+URLS=$(gh codespace ports -c "$CODESPACE" --json sourcePort,browseUrl)
+RAILS_URL=$(echo "$URLS" | jq -r '.[] | select(.sourcePort==3000) | .browseUrl')
+METRO_URL=$(echo "$URLS" | jq -r '.[] | select(.sourcePort==8081) | .browseUrl')
+SUPABASE_URL=$(echo "$URLS" | jq -r '.[] | select(.sourcePort==54322) | .browseUrl')
 
 # Save environment config
-cat > ~/.spark-env-$CODESPACE << EOF
+mkdir -p ~/.spark-envs
+cat > ~/.spark-envs/"$CODESPACE" << EOF
 CODESPACE_NAME=$CODESPACE
 BRANCH=$BRANCH
-RUBY_URL=$RUBY_URL
-JAVA_URL=$JAVA_URL
+RAILS_URL=$RAILS_URL
 METRO_URL=$METRO_URL
+SUPABASE_URL=$SUPABASE_URL
 CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EOF
 
-ln -sf ~/.spark-env-$CODESPACE ~/.spark-env-current
+ln -sf ~/.spark-envs/"$CODESPACE" ~/.spark-env-current
+
+# Step 5: Start port forwarding in background
+echo ""
+echo "[5/5] Starting port forwarding..."
+
+# Create auto-reconnecting tunnel script
+TUNNEL_SCRIPT="/tmp/spark-tunnel-$CODESPACE.sh"
+cat > "$TUNNEL_SCRIPT" << TUNNEL
+#!/bin/bash
+while true; do
+  echo "[\$(date)] Connecting port forward..."
+  gh codespace ports forward 8081:8081 3000:3000 -c "$CODESPACE"
+  echo "[\$(date)] Tunnel dropped, reconnecting in 2s..."
+  sleep 2
+done
+TUNNEL
+chmod +x "$TUNNEL_SCRIPT"
+
+# Start tunnel in background
+nohup "$TUNNEL_SCRIPT" > /tmp/spark-tunnel.log 2>&1 &
+TUNNEL_PID=$!
+echo "$TUNNEL_PID" > /tmp/spark-tunnel.pid
 
 echo ""
-echo "=== Codespace created! ==="
-echo "Name: $CODESPACE"
+echo "============================================"
+echo "  SPARK ENVIRONMENT READY"
+echo "============================================"
 echo ""
-echo "Connect: gh codespace ssh -c $CODESPACE"
-echo "VS Code: gh codespace code -c $CODESPACE"
+echo "Codespace:  $CODESPACE"
+echo "Branch:     $BRANCH"
 echo ""
-echo "Note: Run .devcontainer/start-all.sh inside the codespace to start services"
+echo "Local URLs (via port forward):"
+echo "  Rails:    http://localhost:3000"
+echo "  Metro:    http://localhost:8081"
+echo ""
+echo "Remote URLs:"
+echo "  Rails:    $RAILS_URL"
+echo "  Metro:    $METRO_URL"
+echo "  Supabase: $SUPABASE_URL"
+echo ""
+echo "Commands:"
+echo "  SSH:      gh codespace ssh -c $CODESPACE"
+echo "  VS Code:  gh codespace code -c $CODESPACE"
+echo "  Logs:     tail -f /tmp/spark-tunnel.log"
+echo "  Stop:     kill \$(cat /tmp/spark-tunnel.pid)"
+echo ""
+echo "Port forwarding running in background (PID: $TUNNEL_PID)"
