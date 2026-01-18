@@ -109,6 +109,9 @@ cat > .env.local << 'ENVEOF'
 RAILS_ENV=development
 ENVEOF
 
+# Allow Codespace hosts in Rails (prevents "Blocked host" error)
+echo 'Rails.application.config.hosts << /.*\.app\.github\.dev/' >> config/environments/development.rb
+
 # Patch database.yml to use TCP connection to Docker MySQL (remove socket, set credentials)
 # The original uses Rails.application.secrets and socket, we override for local Docker
 cat > config/database.yml << 'DBEOF'
@@ -136,6 +139,7 @@ test:
 DBEOF
 
 bundle exec rake db:create db:migrate db:seed
+bundle exec rake assets:precompile
 cd ..
 
 touch /tmp/setup-complete
