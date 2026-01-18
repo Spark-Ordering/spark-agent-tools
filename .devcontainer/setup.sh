@@ -34,10 +34,19 @@ until docker exec mysql mysqladmin ping -h localhost --silent; do
 done
 echo "MySQL is ready!"
 
-# 3. Start local Supabase (Postgres + Edge Functions)
+# 3. Install Supabase CLI and start local Supabase
+echo "Installing Supabase CLI..."
+npm install -g supabase
+
+# Wait for Docker to be fully ready
+echo "Waiting for Docker to be ready..."
+until docker info > /dev/null 2>&1; do
+  sleep 2
+done
+echo "Docker is ready!"
+
 echo "Starting Supabase..."
 cd sparkpos
-npm install -g supabase
 supabase start
 cd ..
 
