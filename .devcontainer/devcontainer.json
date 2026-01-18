@@ -12,6 +12,19 @@
   "customizations": {
     "vscode": {
       "extensions": ["rebornix.ruby", "vscjava.vscode-java-pack"]
+    },
+    "codespaces": {
+      "repositories": {
+        "tecno40/spark_backend": {
+          "permissions": "read-write"
+        },
+        "Spark-Ordering/RequestManager": {
+          "permissions": "read-write"
+        },
+        "carlosdelivery/SparkPos": {
+          "permissions": "read-write"
+        }
+      }
     }
   }
 }
