@@ -54,6 +54,10 @@ cd ..
 
 # 4. Setup spark_backend
 echo "Setting up spark_backend..."
+
+# Install MySQL client dev libraries for mysql2 gem
+sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
+
 cd spark_backend
 bundle install
 
