@@ -36,7 +36,7 @@ echo "MySQL is ready!"
 
 # 3. Install Supabase CLI and start local Supabase
 echo "Installing Supabase CLI..."
-SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -o 'https://[^"]*linux_amd64.deb' | head -1)
+SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -oE 'https://[^"]+linux_amd64\.deb' | head -1)
 curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
 sudo dpkg -i /tmp/supabase.deb
 
@@ -56,7 +56,13 @@ cd ..
 echo "Setting up spark_backend..."
 cd spark_backend
 bundle install
-cp .env.local.template .env.local
+
+# Create .env.local with local MySQL config
+cat > .env.local << 'ENVEOF'
+AWS_DATABASE_URL=mysql2://root:root@127.0.0.1:3306/spark_development
+RAILS_ENV=development
+ENVEOF
+
 bundle exec rake db:create db:migrate db:seed
 cd ..
 
