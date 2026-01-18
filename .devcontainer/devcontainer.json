@@ -1,0 +1,17 @@
+{
+  "name": "Spark Dev Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/ruby:1": { "version": "3.0.5" },
+    "ghcr.io/devcontainers/features/java:1": { "version": "21" },
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": ".devcontainer/setup.sh",
+  "forwardPorts": [3000, 8080, 8081, 3306, 54322],
+  "customizations": {
+    "vscode": {
+      "extensions": ["rebornix.ruby", "vscjava.vscode-java-pack"]
+    }
+  }
+}
