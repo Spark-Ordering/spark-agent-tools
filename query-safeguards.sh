@@ -19,14 +19,16 @@ is_update_query() {
 # UPDATE table_name SET ... -> table_name
 extract_update_table() {
     local query="$1"
-    echo "$query" | sed -n 's/^\s*UPDATE\s\+\([^ ]\+\)\s.*/\1/ip' | head -1
+    # Convert to lowercase and extract second word (table name after UPDATE)
+    echo "$query" | tr '[:upper:]' '[:lower:]' | awk '{for(i=1;i<=NF;i++) if($i=="update") {print $(i+1); exit}}' | head -1
 }
 
 # Extract WHERE clause from query (everything after WHERE keyword)
 extract_where_clause() {
     local query="$1"
-    if echo "$query" | grep -iq '\sWHERE\s'; then
-        echo "$query" | sed -n 's/.*\sWHERE\s\+\(.*\)/\1/ip' | head -1
+    if echo "$query" | grep -iq 'WHERE'; then
+        # Use perl for reliable case-insensitive extraction
+        echo "$query" | perl -pe 's/.*\bWHERE\s+//i' | head -1
     fi
 }
 

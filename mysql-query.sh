@@ -26,4 +26,6 @@ DB_NAME=$(echo $AWS_DATABASE_URL | sed -n 's|.*/\([^?]*\).*|\1|p')
 validate_query "$1" "mysql" "$DB_HOST" "$DB_USER" "$DB_PASS" "$DB_NAME"
 
 # Run query
-mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$1" 2>&1 | grep -v "Warning"
+# Note: grep -v returns exit 1 when no lines pass through (e.g., INSERT with only warning output)
+# Using || true to prevent this from failing the script
+mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$1" 2>&1 | grep -v "Warning" || true
