@@ -36,7 +36,8 @@ echo "MySQL is ready!"
 
 # 3. Install Supabase CLI and start local Supabase
 echo "Installing Supabase CLI..."
-curl -fsSL -o /tmp/supabase.deb https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.deb
+SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -o 'https://[^"]*linux_amd64.deb' | head -1)
+curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
 sudo dpkg -i /tmp/supabase.deb
 
 # Wait for Docker to be fully ready
