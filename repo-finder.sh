@@ -12,16 +12,25 @@ find_repo() {
         return 1
     fi
 
-    while IFS= read -r git_dir; do
-        local repo_dir=$(dirname "$git_dir")
-        local remote_url=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || echo "")
+    # Determine search directories based on environment
+    # On Codespace, repos are under /workspaces, not $HOME
+    local search_dirs=("$HOME")
+    if [[ -d /workspaces ]]; then
+        search_dirs+=("/workspaces")
+    fi
 
-        if [[ "$remote_url" == *"$target_suffix"* ]] && [[ -f "$repo_dir/.env.local" ]]; then
-            echo "$repo_dir"
-            return 0
-        fi
-    done < <(find "$HOME" -maxdepth $search_depth -type d -name ".git" 2>/dev/null)
+    for search_dir in "${search_dirs[@]}"; do
+        while IFS= read -r git_dir; do
+            local repo_dir=$(dirname "$git_dir")
+            local remote_url=$(git -C "$repo_dir" remote get-url origin 2>/dev/null || echo "")
 
-    echo "Error: Repository with suffix '$target_suffix' and .env.local not found within $search_depth levels of home directory" >&2
+            if [[ "$remote_url" == *"$target_suffix"* ]] && [[ -f "$repo_dir/.env.local" ]]; then
+                echo "$repo_dir"
+                return 0
+            fi
+        done < <(find "$search_dir" -maxdepth $search_depth -type d -name ".git" 2>/dev/null)
+    done
+
+    echo "Error: Repository with suffix '$target_suffix' and .env.local not found" >&2
     return 1
 }
