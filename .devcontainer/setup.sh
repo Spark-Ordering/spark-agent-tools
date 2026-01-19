@@ -31,12 +31,13 @@ sudo dpkg -i /tmp/supabase.deb
 # Make track scripts executable
 chmod +x .devcontainer/tracks/*.sh
 
-# Run all three tracks in parallel
+# Run all tracks in parallel
 echo ""
 echo "=== Starting parallel tracks ==="
-echo "  [sparkpos] supabase + npm + migrations"
-echo "  [rails]    apt-get + bundle + MySQL + migrations"
-echo "  [java]     mvn package"
+echo "  [sparkpos]  supabase + npm + migrations"
+echo "  [rails]     apt-get + bundle + MySQL + migrations"
+echo "  [java]      mvn package"
+echo "  [powersync] mongodb + powersync service (waits for supabase)"
 echo ""
 
 START_TIME=$(date +%s)
@@ -50,6 +51,9 @@ RAILS_PID=$!
 .devcontainer/tracks/java-track.sh &
 JAVA_PID=$!
 
+.devcontainer/tracks/powersync-track.sh &
+POWERSYNC_PID=$!
+
 # Wait for all tracks
 wait $JAVA_PID
 echo "✓ Java track complete"
@@ -59,6 +63,9 @@ echo "✓ SparkPos track complete"
 
 wait $RAILS_PID
 echo "✓ Rails track complete"
+
+wait $POWERSYNC_PID
+echo "✓ PowerSync track complete"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))

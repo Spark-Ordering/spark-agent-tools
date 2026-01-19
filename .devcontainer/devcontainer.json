@@ -9,10 +9,12 @@
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/sshd:1": {}
   },
-  "forwardPorts": [3000, 8080, 8081, 3306, 54321, 54322, 54323],
+  "forwardPorts": [3000, 8080, 8081, 3306, 27017, 54321, 54322, 54323],
   "portsAttributes": {
     "3000": { "label": "Rails", "onAutoForward": "notify", "visibility": "public" },
+    "8080": { "label": "PowerSync", "onAutoForward": "silent", "visibility": "public" },
     "8081": { "label": "Metro", "onAutoForward": "silent", "visibility": "public" },
+    "27017": { "label": "MongoDB", "onAutoForward": "silent" },
     "54321": { "label": "Supabase API", "onAutoForward": "silent", "visibility": "public" },
     "54322": { "label": "Supabase DB", "onAutoForward": "silent", "visibility": "public" },
     "54323": { "label": "Supabase Studio", "onAutoForward": "notify", "visibility": "public" }

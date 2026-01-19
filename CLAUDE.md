@@ -29,12 +29,27 @@ Repos are typically at:
 
 Or use `repo-finder.sh` to locate them dynamically.
 
+## CRITICAL: Full Stack Runs on Codespace
+
+**The ENTIRE backend stack runs on Codespace, NOT cloud services.** This includes:
+
+- **Supabase** - Local instance on Codespace (NOT supabase.co cloud)
+- **PowerSync** - Self-hosted on Codespace (NOT powersync.journeyapps.com cloud)
+- **Metro** - React Native bundler on Codespace
+- **spark_backend** - Rails server on Codespace
+- **RequestManager** - Java service on Codespace
+
+The mobile app runs on a LOCAL emulator and connects to ALL services via port forwarding from Codespace. The app's `.env.local` must point to localhost URLs (forwarded ports), NOT cloud URLs.
+
+**If debugging shows the app trying to reach cloud URLs (*.supabase.co, *.powersync.journeyapps.com), the environment is misconfigured.**
+
 ## Services in Codespace
 
 | Service | Port |
 |---------|------|
 | Rails (spark_backend) | 3000 |
 | Metro (SparkPos) | 8081 |
+| PowerSync | 8080 |
 | Supabase API | 54321 |
 | Supabase Postgres | 54322 |
 | Supabase Studio | 54323 |
@@ -111,6 +126,45 @@ Creates a full dev environment: Codespace, port forwarding, Metro terminal, DevT
 ./mac/teardown-env.sh              # Delete current Codespace
 ./mac/teardown-env.sh <name>       # Delete specific Codespace
 ```
+
+## Supabase Edge Function Environment Variables
+
+**CRITICAL: Edge functions read custom env vars from `supabase/functions/.env`, NOT from `.env.local`.**
+
+If an edge function needs `POWERSYNC_PRIVATE_KEY` or other custom vars:
+
+1. Create/update `supabase/functions/.env` on Codespace:
+   ```bash
+   gh codespace ssh -c <name> -- "grep 'POWERSYNC_PRIVATE_KEY' /workspaces/spark-agent-tools/sparkpos/.env.local > /workspaces/spark-agent-tools/sparkpos/supabase/functions/.env"
+   ```
+
+2. **Reload env vars WITHOUT full restart** (this is important!):
+   ```bash
+   gh codespace ssh -c <name> -- "docker restart supabase_edge_runtime_sparkpos"
+   ```
+
+**NEVER use `supabase stop && supabase start` just to reload env vars** - it triggers massive Docker image downloads (5-10+ minutes). The `docker restart` command takes 2 seconds.
+
+## Port Forwarding
+
+Port forwarding from Codespace to Mac drops frequently. When you see "Network request failed" errors:
+
+```bash
+./ensure-ports.sh                    # Auto-detect codespace, forward missing ports
+./ensure-ports.sh <codespace-name>   # Specific codespace
+```
+
+This script:
+- Checks which ports (54321, 8080, 8081) are missing
+- Only forwards the missing ones (doesn't kill working ports)
+- Uses `nohup` so forwarding survives shell closure
+
+**Ports required:**
+| Port | Service |
+|------|---------|
+| 54321 | Supabase API |
+| 8080 | PowerSync |
+| 8081 | Metro |
 
 ## Architecture
 

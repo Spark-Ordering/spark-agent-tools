@@ -33,6 +33,18 @@ if ! docker ps | grep -q supabase_db_sparkpos; then
   supabase start
 fi
 
+# Start MongoDB if not running
+if ! docker ps | grep -q mongo; then
+  echo "Starting MongoDB..."
+  docker start mongo 2>/dev/null || echo "MongoDB container not found - run setup.sh first"
+fi
+
+# Start PowerSync if not running
+if ! docker ps | grep -q powersync; then
+  echo "Starting PowerSync..."
+  docker start powersync 2>/dev/null || echo "PowerSync container not found - run setup.sh first"
+fi
+
 # Start Rails server
 echo "Starting Rails server on port 3000..."
 cd "$WORKDIR/spark_backend"
@@ -47,8 +59,9 @@ touch /tmp/services-started
 
 echo ""
 echo "=== Services Started ==="
-echo "  Rails:    http://localhost:3000"
-echo "  Supabase: http://localhost:54322"
+echo "  Rails:     http://localhost:3000"
+echo "  Supabase:  http://localhost:54322"
+echo "  PowerSync: http://localhost:8080"
 echo ""
 echo "Logs:"
 echo "  Rails: /tmp/rails.log"
