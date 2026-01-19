@@ -126,13 +126,23 @@ if adb devices 2>/dev/null | grep -q "emulator"; then
   echo "adb reverse configured for emulator (Metro, Rails, Supabase)"
 fi
 
-# Step 6: Kill background Metro and open interactive Metro in new Terminal
+# Step 6: Open Rails and VS Code immediately (don't wait for Metro)
 echo ""
-echo "[6/7] Opening Metro in new Terminal window..."
+echo "[6/8] Opening Rails and VS Code..."
+sleep 3  # Give port forwarding a moment to establish
+open "http://localhost:3000"
+open "https://github.com/codespaces/$CODESPACE"
 
-# Kill background Metro so we can run interactively
+# Step 7: Kill background Metro and open interactive Metro in new Terminal
+echo ""
+echo "[7/8] Opening Metro in new Terminal window..."
+
+# Kill anything using port 8081 locally (stale port forwards, etc.)
+lsof -ti:8081 | xargs kill -9 2>/dev/null || true
+
+# Kill any background Metro on Codespace so we can run interactively
 gh codespace ssh -c "$CODESPACE" -- "pkill -f metro 2>/dev/null || true; pkill -f 'npm start' 2>/dev/null || true" 2>/dev/null || true
-sleep 2
+sleep 1
 
 # Open new terminal window with interactive Metro (terminal-agnostic)
 METRO_CMD="gh codespace ssh -c $CODESPACE -- -t 'cd /workspaces/spark-agent-tools/sparkpos && npm start -- --port 8081'"

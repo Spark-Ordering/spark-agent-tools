@@ -39,21 +39,18 @@ cd "$WORKDIR/spark_backend"
 pkill -f "rails server" 2>/dev/null || true
 nohup bundle exec rails server -p 3000 -b 0.0.0.0 > /tmp/rails.log 2>&1 &
 
-# Start Metro bundler (background mode - for interactive mode, kill this and run manually)
-echo "Starting Metro bundler on port 8081..."
-cd "$WORKDIR/sparkpos"
-pkill -f "metro" 2>/dev/null || true
-nohup npm start -- --port 8081 > /tmp/metro.log 2>&1 &
+# NOTE: Metro is NOT started here - spawn-env.sh opens it interactively in a terminal window
+# This avoids port conflicts when the user wants interactive Metro (R to reload, D for dev menu, etc.)
 
 # Mark services as started
 touch /tmp/services-started
 
 echo ""
 echo "=== Services Started ==="
-echo "  Rails:  http://localhost:3000"
-echo "  Metro:  http://localhost:8081"
+echo "  Rails:    http://localhost:3000"
 echo "  Supabase: http://localhost:54322"
 echo ""
 echo "Logs:"
 echo "  Rails: /tmp/rails.log"
-echo "  Metro: /tmp/metro.log"
+echo ""
+echo "Metro: Run manually or use spawn-env.sh (opens in interactive terminal)"
