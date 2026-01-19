@@ -7,15 +7,17 @@ SPARKPOS_BRANCH=${1:-master}
 echo "=== Spark Development Environment Setup ==="
 echo "SparkPos branch: $SPARKPOS_BRANCH"
 
-# Debug: Check if GH_TOKEN is available
-echo "Checking for GH_TOKEN..."
+# Get GitHub token (from env or gh CLI)
 if [ -z "$GH_TOKEN" ]; then
-  echo "ERROR: GH_TOKEN not found. Available env vars:"
-  env | grep -i token || echo "No token vars found"
-  env | grep -i gh || echo "No GH vars found"
+  echo "Getting GitHub token from gh CLI..."
+  GH_TOKEN=$(gh auth token 2>/dev/null)
+fi
+
+if [ -z "$GH_TOKEN" ]; then
+  echo "ERROR: Could not get GitHub token"
   exit 1
 fi
-echo "GH_TOKEN found (length: ${#GH_TOKEN})"
+echo "GitHub token ready"
 
 # 1. Clone repos in parallel
 echo "Cloning repositories..."
