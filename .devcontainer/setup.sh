@@ -109,9 +109,9 @@ SUPABASE_PID=$!
 
 # Background job 2: Java setup
 (
-  echo "[java] Running mvn package..."
+  echo "[java] Running mvn package (parallel)..."
   cd RequestManager
-  mvn package -DskipTests -q
+  mvn package -DskipTests -q -T 1C
   echo "[java] Done!"
 ) &
 JAVA_PID=$!
@@ -131,9 +131,9 @@ NODE_PID=$!
   echo "[ruby] Waiting for MySQL dev libraries..."
   while [ ! -f /tmp/deps-done ]; do sleep 1; done
 
-  echo "[ruby] Running bundle install..."
+  echo "[ruby] Running bundle install (parallel)..."
   cd spark_backend
-  bundle install --quiet
+  bundle install --quiet --jobs $(nproc)
   touch /tmp/bundle-done
   echo "[ruby] Bundle done!"
 ) &
