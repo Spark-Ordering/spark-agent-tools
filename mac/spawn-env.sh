@@ -129,8 +129,8 @@ fi
 # Step 6: Open Rails and VS Code immediately (don't wait for Metro)
 echo ""
 echo "[6/8] Opening Rails and VS Code..."
-sleep 3  # Give port forwarding a moment to establish
-open "http://localhost:3000"
+RAILS_GITHUB_URL="https://${CODESPACE}-3000.app.github.dev"
+open "$RAILS_GITHUB_URL"
 open "https://github.com/codespaces/$CODESPACE"
 
 # Step 7: Kill background Metro and open interactive Metro in new Terminal
@@ -194,12 +194,6 @@ DURATION=$((END_TIME - START_TIME))
 MINUTES=$((DURATION / 60))
 SECONDS=$((DURATION % 60))
 
-# Open Rails and VS Code in browser
-echo ""
-echo "[8/8] Opening Rails and VS Code..."
-open "http://localhost:3000"
-open "https://github.com/codespaces/$CODESPACE"
-
 echo ""
 echo "============================================"
 echo "  SPARK ENVIRONMENT READY"
@@ -210,9 +204,10 @@ echo ""
 echo "Codespace:  $CODESPACE"
 echo "Branch:     $BRANCH"
 echo ""
-echo "Local URLs (via port forward):"
-echo "  Rails:    http://localhost:3000"
-echo "  Metro:    http://localhost:8081"
+echo "GitHub URLs:"
+echo "  Rails:    https://${CODESPACE}-3000.app.github.dev"
+echo "  Metro:    https://${CODESPACE}-8081.app.github.dev"
+echo "  Supabase: https://${CODESPACE}-54323.app.github.dev"
 echo ""
 echo "Metro is running in a separate Terminal window."
 echo "  R - reload app"
