@@ -12,8 +12,13 @@ source "$SCRIPT_DIR/query-safeguards.sh"
 
 SPARK_BACKEND_DIR=$(find_repo "spark_backend.git")
 
-# Source env file
-source "$SPARK_BACKEND_DIR/.env.local"
+# Extract AWS_DATABASE_URL from env file (don't source entire file - may have syntax issues)
+AWS_DATABASE_URL=$(grep -E '^AWS_DATABASE_URL=' "$SPARK_BACKEND_DIR/.env.local" | head -1 | cut -d'=' -f2-)
+
+if [[ -z "$AWS_DATABASE_URL" ]]; then
+    echo "Error: AWS_DATABASE_URL not found in $SPARK_BACKEND_DIR/.env.local" >&2
+    exit 1
+fi
 
 # Parse credentials from AWS_DATABASE_URL
 # Format: mysql2://username:password@host/database
