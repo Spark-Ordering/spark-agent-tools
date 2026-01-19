@@ -21,6 +21,12 @@ git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos 
 wait
 echo "Repos cloned!"
 
+# Checkout SparkPos branch if specified (via SPARKPOS_BRANCH env var)
+if [ -n "$SPARKPOS_BRANCH" ] && [ "$SPARKPOS_BRANCH" != "master" ]; then
+  echo "Checking out SparkPos branch: $SPARKPOS_BRANCH"
+  cd sparkpos && git checkout "$SPARKPOS_BRANCH" && cd ..
+fi
+
 # 2. Start MySQL in Docker (runs in background, we'll wait later)
 echo "Starting MySQL..."
 docker run -d --name mysql \
@@ -29,8 +35,9 @@ docker run -d --name mysql \
   -e MYSQL_DATABASE=spark_development \
   mysql:8
 
-# 3. Install Supabase CLI and Chromium (for React Native DevTools)
-echo "Installing Supabase CLI and Chromium..."
+# 3. Install Supabase CLI and gettext (for envsubst)
+echo "Installing Supabase CLI and dependencies..."
+sudo apt-get update && sudo apt-get install -y gettext-base
 SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -oE 'https://[^"]+linux_amd64\.deb' | head -1)
 curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
 sudo dpkg -i /tmp/supabase.deb
@@ -49,7 +56,7 @@ echo "Docker is ready!"
 # 4. PARALLEL SETUP - Run all heavy tasks concurrently
 echo "Starting parallel setup..."
 
-# Background job 1: Supabase (pulls many Docker images) - runs independently
+# Background job 1: Supabase (pulls many Docker images) - creates .env.local files
 (
   echo "[supabase] Starting Supabase..."
   cd sparkpos
@@ -61,13 +68,49 @@ SECRETEOF
 
   supabase start
 
+  # Extract Supabase keys from status output
+  echo "[supabase] Extracting Supabase keys..."
+  SUPABASE_STATUS=$(supabase status 2>/dev/null)
+  export SUPABASE_ANON_KEY=$(echo "$SUPABASE_STATUS" | grep "anon key:" | awk '{print $NF}')
+  export SUPABASE_SERVICE_KEY=$(echo "$SUPABASE_STATUS" | grep "service_role key:" | awk '{print $NF}')
+
+  # Fallback to well-known local Supabase keys if extraction failed
+  if [ -z "$SUPABASE_ANON_KEY" ]; then
+    export SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+    echo "[supabase] Using default local anon key"
+  fi
+  if [ -z "$SUPABASE_SERVICE_KEY" ]; then
+    export SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+    echo "[supabase] Using default local service role key"
+  fi
+
+  # Generate Rails secret key
+  export SECRET_KEY=$(openssl rand -hex 64)
+
+  # Create .env.local files from templates (substituting variables)
+  ENV_TEMPLATES="/workspaces/spark-agent-tools/.devcontainer/env-templates"
+
+  echo "[supabase] Creating SparkPos .env.local..."
+  envsubst < "$ENV_TEMPLATES/sparkpos.env" > .env.local
+
+  echo "[supabase] Creating RequestManager .env.local..."
+  envsubst < "$ENV_TEMPLATES/requestmanager.env" > ../RequestManager/.env.local
+
+  echo "[supabase] Creating spark_backend .env.local..."
+  envsubst < "$ENV_TEMPLATES/spark_backend.env" > ../spark_backend/.env.local
+
+  echo "[supabase] All .env.local files created"
+
+  # Signal that .env.local files are ready
+  touch /tmp/env-files-done
+
   # Wait for npm install to complete (we need dependencies for migrations)
   while [ ! -f /tmp/npm-done ]; do
     sleep 2
   done
 
   echo "[supabase] Running SparkPos migrations..."
-  DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres" npx tsx supabase/migrations/run.ts
+  npx tsx supabase/migrations/run.ts
 
   echo "[supabase] Setting up default restaurant credentials..."
   # Call the edge function to set password (restaurant_id=113, password=dev123)
@@ -118,36 +161,18 @@ NODE_PID=$!
   done
   echo "[ruby] MySQL ready!"
 
-  # Configure Rails for local development
-  cat > .env.local << 'ENVEOF'
-RAILS_ENV=development
-ENVEOF
+  # Wait for .env.local to be created by Supabase job
+  echo "[ruby] Waiting for .env.local files..."
+  while [ ! -f /tmp/env-files-done ]; do
+    sleep 2
+  done
+  echo "[ruby] .env.local ready!"
 
+  # Allow Codespace URLs in Rails
   echo 'Rails.application.config.hosts << /.*\.app\.github\.dev/' >> config/environments/development.rb
 
-  cat > config/database.yml << 'DBEOF'
-default: &default
-  adapter: mysql2
-  encoding: utf8
-  pool: 5
-  timeout: 5000
-
-development:
-  <<: *default
-  database: SPARK
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-
-test:
-  <<: *default
-  database: SPARK_TEST
-  host: 127.0.0.1
-  port: 3306
-  username: root
-  password: root
-DBEOF
+  # Create database.yml for local MySQL (from template)
+  cp /workspaces/spark-agent-tools/.devcontainer/env-templates/database.yml config/database.yml
 
   # Run migrations and asset precompilation
   echo "[ruby] Running db:create db:migrate db:seed..."

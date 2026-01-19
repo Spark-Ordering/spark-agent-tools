@@ -1,0 +1,24 @@
+# spark_backend database configuration for Codespace
+# Connects to local MySQL Docker container
+
+default: &default
+  adapter: mysql2
+  encoding: utf8
+  pool: 5
+  timeout: 5000
+
+development:
+  <<: *default
+  database: SPARK
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root
+
+test:
+  <<: *default
+  database: SPARK_TEST
+  host: 127.0.0.1
+  port: 3306
+  username: root
+  password: root

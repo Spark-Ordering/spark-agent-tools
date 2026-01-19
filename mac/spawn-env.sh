@@ -1,15 +1,39 @@
 #!/bin/bash
-# Usage: ./spawn-env.sh [branch-name]
+# Usage: ./spawn-env.sh [branch-name] [--sparkpos <branch>]
 # Fully automated: creates Codespace, waits for services, sets up port forwarding
+#
+# Examples:
+#   ./spawn-env.sh                              # master branch, SparkPos master
+#   ./spawn-env.sh --sparkpos add-logout-button # master branch, SparkPos add-logout-button
+#   ./spawn-env.sh feature-x --sparkpos my-feat # feature-x branch, SparkPos my-feat
 
 set -e
 
-BRANCH=${1:-master}
+# Parse arguments
+BRANCH="master"
+SPARKPOS_BRANCH="master"
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --sparkpos)
+      SPARKPOS_BRANCH="$2"
+      shift 2
+      ;;
+    *)
+      BRANCH="$1"
+      shift
+      ;;
+  esac
+done
+
 REPO="Spark-Ordering/spark-agent-tools"
 ENV_NAME="spark-${BRANCH}"
 
 echo "=== Spark Environment Spawner ==="
 echo "Branch: $BRANCH"
+if [ "$SPARKPOS_BRANCH" != "master" ]; then
+  echo "SparkPos Branch: $SPARKPOS_BRANCH"
+fi
 echo ""
 
 # Step 1: Create Codespace with 16GB RAM
@@ -19,6 +43,7 @@ CODESPACE=$(gh codespace create \
   --branch "$BRANCH" \
   --machine standardLinux32gb \
   --display-name "$ENV_NAME" \
+  --env "SPARKPOS_BRANCH=$SPARKPOS_BRANCH" \
   2>&1 | tee /dev/stderr | tail -1)
 
 if [ -z "$CODESPACE" ]; then
