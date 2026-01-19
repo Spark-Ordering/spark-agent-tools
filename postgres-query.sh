@@ -1,22 +1,31 @@
 #!/bin/bash
 
-# postgres-query.sh - Run PostgreSQL queries using credentials from .env.local
+# postgres-query.sh - Run PostgreSQL queries
+# Works in both Codespace (queries local Supabase) and local Mac (queries cloud DB)
 # Usage: ./postgres-query.sh "SELECT * FROM table"
 
 set -e
 
-# Load utilities
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/repo-finder.sh"
-source "$SCRIPT_DIR/query-safeguards.sh"
+QUERY="$1"
 
-SPARKPOS_DIR=$(find_repo "SparkPos.git")
+if [ -z "$QUERY" ]; then
+  echo "Usage: ./postgres-query.sh \"SELECT * FROM table\""
+  exit 1
+fi
 
-# Source env file
-source "$SPARKPOS_DIR/.env.local"
+# Detect environment
+if [ -d /workspaces ]; then
+  # Running in Codespace - query local Supabase postgres container
+  docker exec supabase_db_sparkpos psql -U postgres -c "$QUERY" 2>&1
+else
+  # Running on local Mac - query cloud database via DATABASE_URL_DEVELOP
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  source "$SCRIPT_DIR/repo-finder.sh"
+  source "$SCRIPT_DIR/query-safeguards.sh"
 
-# Validate query before execution
-validate_query "$1" "postgres" "$DATABASE_URL_DEVELOP"
+  SPARKPOS_DIR=$(find_repo "SparkPos.git")
+  source "$SPARKPOS_DIR/.env.local"
 
-# Run query using DATABASE_URL_DEVELOP
-psql "$DATABASE_URL_DEVELOP" -c "$1" 2>&1
+  validate_query "$QUERY" "postgres" "$DATABASE_URL_DEVELOP"
+  psql "$DATABASE_URL_DEVELOP" -c "$QUERY" 2>&1
+fi
