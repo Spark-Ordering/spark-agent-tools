@@ -33,18 +33,20 @@ docker run -d --name mysql \
   -p 3306:3306 \
   -e MYSQL_ROOT_PASSWORD=root \
   -e MYSQL_DATABASE=spark_development \
-  mysql:8
+  mysql:8 &
+MYSQL_START_PID=$!
 
-# 3. Install Supabase CLI and gettext (for envsubst)
-echo "Installing Supabase CLI and dependencies..."
-sudo apt-get update && sudo apt-get install -y gettext-base
-SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -oE 'https://[^"]+linux_amd64\.deb' | head -1)
-curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
-sudo dpkg -i /tmp/supabase.deb
-
-# Note: React Native DevTools opens in your LOCAL browser via port forwarding
-# Don't set EDGE_PATH in Codespace - there's no display server
-# Press J in Metro, then open http://localhost:8081/debugger-ui/ on your Mac
+# 3. Install Supabase CLI and gettext (for envsubst) - in background
+(
+  echo "[deps] Installing Supabase CLI and dependencies..."
+  sudo apt-get update && sudo apt-get install -y gettext-base default-libmysqlclient-dev
+  SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -oE 'https://[^"]+linux_amd64\.deb' | head -1)
+  curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
+  sudo dpkg -i /tmp/supabase.deb
+  touch /tmp/deps-done
+  echo "[deps] Done!"
+) &
+DEPS_PID=$!
 
 # Wait for Docker to be fully ready
 echo "Waiting for Docker to be ready..."
@@ -53,10 +55,13 @@ until docker info > /dev/null 2>&1; do
 done
 echo "Docker is ready!"
 
-# 4. PARALLEL SETUP - Run all heavy tasks concurrently
-echo "Starting parallel setup..."
+# Wait for MySQL container to start
+wait $MYSQL_START_PID
 
-# Background job 1: Supabase (pulls many Docker images) - creates .env.local files
+# 4. MAXIMUM PARALLEL SETUP - Run everything concurrently
+echo "Starting parallel setup (maximizing parallelization)..."
+
+# Background job 1: Supabase start (pulls Docker images) - ONLY starts containers + creates .env files
 (
   echo "[supabase] Starting Supabase..."
   cd sparkpos
@@ -67,6 +72,7 @@ export const ADMIN_SECRET = 'dev-secret-123';
 SECRETEOF
 
   supabase start
+  touch /tmp/supabase-containers-ready
 
   # Extract Supabase keys from status output
   echo "[supabase] Extracting Supabase keys..."
@@ -90,38 +96,14 @@ SECRETEOF
   # Create .env.local files from templates (substituting variables)
   ENV_TEMPLATES="/workspaces/spark-agent-tools/.devcontainer/env-templates"
 
-  echo "[supabase] Creating SparkPos .env.local..."
+  echo "[supabase] Creating .env.local files..."
   envsubst < "$ENV_TEMPLATES/sparkpos.env" > .env.local
-
-  echo "[supabase] Creating RequestManager .env.local..."
   envsubst < "$ENV_TEMPLATES/requestmanager.env" > ../RequestManager/.env.local
-
-  echo "[supabase] Creating spark_backend .env.local..."
   envsubst < "$ENV_TEMPLATES/spark_backend.env" > ../spark_backend/.env.local
 
-  echo "[supabase] All .env.local files created"
-
-  # Signal that .env.local files are ready
+  # Signal that .env.local files are ready - this unblocks Rails and SparkPos migrations
   touch /tmp/env-files-done
-
-  # Wait for npm install to complete (we need dependencies for migrations)
-  while [ ! -f /tmp/npm-done ]; do
-    sleep 2
-  done
-
-  echo "[supabase] Running SparkPos migrations..."
-  npx tsx supabase/migrations/run.ts
-
-  echo "[supabase] Setting up default restaurant credentials..."
-  # Call the edge function to set password (restaurant_id=113, password=dev123)
-  curl -s -X POST "http://127.0.0.1:54321/functions/v1/set-restaurant-password" \
-    -H "Content-Type: application/json" \
-    -H "Authorization: Bearer dev-secret-123" \
-    -d '{"restaurantId": 113, "password": "dev123"}' \
-    && echo "[supabase] Restaurant credentials set (id=113, password=dev123)"
-
-  touch /tmp/supabase-done
-  echo "[supabase] Done!"
+  echo "[supabase] Containers ready and .env files created!"
 ) &
 SUPABASE_PID=$!
 
@@ -129,7 +111,7 @@ SUPABASE_PID=$!
 (
   echo "[java] Running mvn package..."
   cd RequestManager
-  mvn package -DskipTests
+  mvn package -DskipTests -q
   echo "[java] Done!"
 ) &
 JAVA_PID=$!
@@ -138,35 +120,43 @@ JAVA_PID=$!
 (
   echo "[node] Running npm install..."
   cd sparkpos
-  npm install
+  npm install --silent
   touch /tmp/npm-done
   echo "[node] Done!"
 ) &
 NODE_PID=$!
 
-# Background job 4: Ruby setup -> immediately followed by rake tasks
-# This is the critical path, so we chain bundle -> rake without waiting for others
+# Background job 4: Ruby bundle install (starts immediately, doesn't wait for anything)
 (
-  echo "[ruby] Installing MySQL dev libraries..."
-  sudo apt-get update && sudo apt-get install -y default-libmysqlclient-dev
+  echo "[ruby] Waiting for MySQL dev libraries..."
+  while [ ! -f /tmp/deps-done ]; do sleep 1; done
+
   echo "[ruby] Running bundle install..."
   cd spark_backend
-  bundle install
-  echo "[ruby] Bundle done! Starting Rails setup..."
+  bundle install --quiet
+  touch /tmp/bundle-done
+  echo "[ruby] Bundle done!"
+) &
+BUNDLE_PID=$!
 
-  # Wait for MySQL to be ready (needed for rake tasks)
-  echo "[ruby] Waiting for MySQL..."
+# Background job 5: Rails migrations (waits for: MySQL ready + bundle done + env-files)
+(
+  echo "[rails-migrate] Waiting for dependencies..."
+
+  # Wait for bundle install
+  while [ ! -f /tmp/bundle-done ]; do sleep 1; done
+
+  # Wait for .env.local files
+  while [ ! -f /tmp/env-files-done ]; do sleep 1; done
+
+  # Wait for MySQL to be ready
+  echo "[rails-migrate] Waiting for MySQL..."
   until docker exec mysql mysqladmin ping -h localhost --silent 2>/dev/null; do
     sleep 2
   done
-  echo "[ruby] MySQL ready!"
+  echo "[rails-migrate] MySQL ready!"
 
-  # Wait for .env.local to be created by Supabase job
-  echo "[ruby] Waiting for .env.local files..."
-  while [ ! -f /tmp/env-files-done ]; do
-    sleep 2
-  done
-  echo "[ruby] .env.local ready!"
+  cd spark_backend
 
   # Allow Codespace URLs in Rails
   echo 'Rails.application.config.hosts << /.*\.app\.github\.dev/' >> config/environments/development.rb
@@ -174,32 +164,69 @@ NODE_PID=$!
   # Create database.yml for local MySQL (from template)
   cp /workspaces/spark-agent-tools/.devcontainer/env-templates/database.yml config/database.yml
 
-  # Run migrations and asset precompilation
-  echo "[ruby] Running db:create db:migrate db:seed..."
+  # Run migrations
+  echo "[rails-migrate] Running db:create db:migrate db:seed..."
   bundle exec rake db:create db:migrate db:seed
-  echo "[ruby] Running assets:precompile..."
+
+  echo "[rails-migrate] Running assets:precompile..."
   bundle exec rake assets:precompile
+
   touch /tmp/rails-done
-  echo "[ruby] Rails setup complete!"
+  echo "[rails-migrate] Rails migrations complete!"
 ) &
-RUBY_PID=$!
+RAILS_MIGRATE_PID=$!
 
-# Wait for independent jobs (Java, Node)
+# Background job 6: SparkPos migrations (waits for: npm done + env-files done)
+# Runs IN PARALLEL with Rails migrations since they use different databases!
+(
+  echo "[sparkpos-migrate] Waiting for dependencies..."
+
+  # Wait for npm install
+  while [ ! -f /tmp/npm-done ]; do sleep 1; done
+
+  # Wait for .env.local files (also means Supabase is up)
+  while [ ! -f /tmp/env-files-done ]; do sleep 1; done
+
+  cd sparkpos
+
+  echo "[sparkpos-migrate] Running SparkPos migrations..."
+  npx tsx supabase/migrations/run.ts
+
+  echo "[sparkpos-migrate] Setting up default restaurant credentials..."
+  curl -s -X POST "http://127.0.0.1:54321/functions/v1/set-restaurant-password" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer dev-secret-123" \
+    -d '{"restaurantId": 113, "password": "dev123"}' \
+    && echo "[sparkpos-migrate] Restaurant credentials set (id=113, password=dev123)"
+
+  touch /tmp/sparkpos-done
+  echo "[sparkpos-migrate] SparkPos migrations complete!"
+) &
+SPARKPOS_MIGRATE_PID=$!
+
+# Wait for all jobs
+echo "Waiting for all parallel jobs to complete..."
+
+wait $DEPS_PID
+echo "✓ Dependencies installed"
+
+wait $SUPABASE_PID
+echo "✓ Supabase containers ready"
+
 wait $JAVA_PID
-echo "Java setup complete!"
+echo "✓ Java build complete"
+
 wait $NODE_PID
-echo "Node setup complete!"
+echo "✓ Node install complete"
 
-# Wait for Ruby (critical path - includes rake tasks)
-wait $RUBY_PID
-echo "Ruby + Rails setup complete!"
+wait $BUNDLE_PID
+echo "✓ Ruby bundle complete"
 
-# Wait for Supabase if still running (it's independent but we want clean exit)
-if [ ! -f /tmp/supabase-done ]; then
-  echo "Waiting for Supabase to finish..."
-  wait $SUPABASE_PID
-fi
-echo "Supabase setup complete!"
+wait $RAILS_MIGRATE_PID
+echo "✓ Rails migrations complete"
+
+wait $SPARKPOS_MIGRATE_PID
+echo "✓ SparkPos migrations complete"
 
 touch /tmp/setup-complete
 echo ""
