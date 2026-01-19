@@ -1161,7 +1161,8 @@ SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '';
 LOCK TABLES `open_times` WRITE;
 /*!40000 ALTER TABLE `open_times` DISABLE KEYS */;
 -- Always open: all days (255), 0:00-23:59, open_or_closed=1 (OPEN)
-REPLACE INTO `open_times` (`open_time_id`, `restaurant_id`, `menu_category_id`, `days_mask`, `start_time_minute`, `end_time_minute`, `open_or_closed`, `date`, `created_at`, `updated_at`) VALUES (583,23,NULL,255,0,1439,1,NULL,'2024-04-27 00:27:29','2024-09-02 04:49:31');
+-- Note: open_or_closed=0 means OPEN, open_or_closed=1 means CLOSED
+REPLACE INTO `open_times` (`open_time_id`, `restaurant_id`, `menu_category_id`, `days_mask`, `start_time_minute`, `end_time_minute`, `open_or_closed`, `date`, `created_at`, `updated_at`) VALUES (583,23,NULL,255,0,1439,0,NULL,'2024-04-27 00:27:29','2024-09-02 04:49:31');
 /*!40000 ALTER TABLE `open_times` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
@@ -1176,5 +1177,10 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2026-01-19 13:12:01
+
+-- payment_merchant_accounts (required for card payments)
+-- Using test Stripe keys; payment_merchant_account_type=1 is Stripe
+REPLACE INTO `payment_merchant_accounts` (`payment_merchant_account_id`, `restaurant_id`, `payment_merchant_account_type`, `created_at`, `updated_at`, `external_id`, `private_key`, `public_key`) VALUES
+(1000, 23, 1, NOW(), NOW(), NULL, 'sk_test_51Mqzx8CMuwMc3J0pVpU0r0wPbsWHJD5a5VIP78zwEOEyUzuGIy0vpgoovpL2lSc16MFlZ6rqC9bsmW5yaWK3L3N400D6dcs85C', 'pk_test_51Mqzx8CMuwMc3J0ptq2xar9gDD2Nue6WQx4FU1LZCIQUDx9t2wfPjB66a9a89WkXTfqhqfQfb2ArU036S1OLhVOB00XUJ1mTdO');
 
 SET FOREIGN_KEY_CHECKS = 1;
