@@ -55,7 +55,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:05:56
+-- Dump completed on 2026-01-19 13:11:47
 
 -- restaurants
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -104,7 +104,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:05:58
+-- Dump completed on 2026-01-19 13:11:48
 
 -- menu_categories
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -166,7 +166,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:05:59
+-- Dump completed on 2026-01-19 13:11:50
 
 -- menu_items
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -272,7 +272,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:01
+-- Dump completed on 2026-01-19 13:11:52
 
 -- option_questions
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -365,7 +365,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:03
+-- Dump completed on 2026-01-19 13:11:53
 
 -- option_answers
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -929,7 +929,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:04
+-- Dump completed on 2026-01-19 13:11:55
 
 -- option_question_groups
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -978,7 +978,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:06
+-- Dump completed on 2026-01-19 13:11:56
 
 -- option_question_group_links
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -1026,7 +1026,7 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:07
+-- Dump completed on 2026-01-19 13:11:58
 
 -- option_question_menu_items
 -- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
@@ -1125,6 +1125,55 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-01-19 13:06:09
+-- Dump completed on 2026-01-19 13:12:00
+
+-- open_times
+-- MySQL dump 10.13  Distrib 9.3.0, for macos14.7 (arm64)
+--
+-- Host: stage-database.cluster-c01bnweqtr8m.us-east-2.rds.amazonaws.com    Database: SPARK
+-- ------------------------------------------------------
+-- Server version	8.0.39
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+SET @MYSQLDUMP_TEMP_LOG_BIN = @@SESSION.SQL_LOG_BIN;
+SET @@SESSION.SQL_LOG_BIN= 0;
+
+--
+-- GTID state at the beginning of the backup 
+--
+
+SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '';
+
+--
+-- Dumping data for table `open_times`
+--
+-- WHERE:  restaurant_id = 23
+
+LOCK TABLES `open_times` WRITE;
+/*!40000 ALTER TABLE `open_times` DISABLE KEYS */;
+REPLACE INTO `open_times` (`open_time_id`, `restaurant_id`, `menu_category_id`, `days_mask`, `start_time_minute`, `end_time_minute`, `open_or_closed`, `date`, `created_at`, `updated_at`) VALUES (583,23,NULL,255,0,1439,0,NULL,'2024-04-27 00:27:29','2024-09-02 04:49:31');
+/*!40000 ALTER TABLE `open_times` ENABLE KEYS */;
+UNLOCK TABLES;
+SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-01-19 13:12:01
 
 SET FOREIGN_KEY_CHECKS = 1;
