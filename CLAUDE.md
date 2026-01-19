@@ -87,6 +87,14 @@ This repository contains database query wrapper scripts for the Spark platform. 
 **Purpose:** Query the SparkPos PostgreSQL database
 **Credential Source:** Uses `DATABASE_URL_DEVELOP` environment variable
 
+**IMPORTANT: Codespace vs Cloud Database**
+- Running locally on Mac queries the **cloud database** (via DATABASE_URL_DEVELOP)
+- To query the **Codespace's local Supabase**, run the script ON the Codespace:
+```bash
+gh codespace ssh -c <codespace-name> -- "cd /workspaces/spark-agent-tools && ./postgres-query.sh \"SELECT * FROM table\""
+```
+When debugging sync issues, always query the Codespace database since that's what the app connects to.
+
 ### Spark Runner Tool
 ```bash
 ./sparkr.sh spb    # Build and run spark_backend (Rails server + worker)
