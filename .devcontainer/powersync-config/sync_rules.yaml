@@ -1,0 +1,27 @@
+bucket_definitions:
+  catalog:
+    parameters: SELECT (request.jwt() ->> 'restaurant_id')::integer as restaurant_id
+    data:
+      - SELECT * FROM menu_categories WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM menu_items WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM restaurants WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM option_questions WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM option_answers WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM option_question_groups WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM option_pre_modifiers WHERE restaurant_id = bucket.restaurant_id
+
+  operations:
+    parameters: SELECT (request.jwt() ->> 'restaurant_id')::integer as restaurant_id
+    data:
+      - SELECT * FROM pos_devices WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM carts WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM orders WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM printers WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM print_templates WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM order_items WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM order_item_questions WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM transactions WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM print_jobs WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM menu_versions WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM customers WHERE restaurant_id = bucket.restaurant_id
+      - SELECT * FROM addresses WHERE restaurant_id = bucket.restaurant_id

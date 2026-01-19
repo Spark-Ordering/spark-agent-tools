@@ -1,0 +1,12 @@
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "n": "kzFQ7ZhxvMRYVmIr6YVzpXjR9mjjKDkUVY1rbZI1Qqj-9j-HQxaPXsGVg4NsobdLVyZlJkbSI3aVIbzAX6xFHT4gOc7-Q6ynyD_wKMvK89yj0OlL7m60KXQ7Ex56w_JzTSSiMToLd-9_Cb-M34RVMzsVAydv7dBizl3vGznbQPZhOq-Fa_LMT8QWLzYoc_67MQa-HF7HBBmVAYqEdxGS27SVb2HIhvUT9eDws5elSD2nq05OoOZSVl4CT3wETIg0m4xTO5I2cMnqFfeb8ZIU_cp9ETc3810xY-unzNgSTgK_--XqDBzZEP5ropx10SMjE2gUiRnPj9-DuutPQSpamQ",
+      "e": "AQAB",
+      "kid": "powersync-dev-key",
+      "use": "sig",
+      "alg": "RS256"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "kty": "RSA",
+  "n": "nZ8z2QuqBF94Z-gIKboxtGLu3bgrpQysPH2p5_1K3He-fhO5OU8LK1zk7Y3Z89CSxY3aOv5ABc1JtpHH4mTTB2vrUXWFFmcKYvBzVEMWd8_u63_MTBVrs6FNK2Kmj77GxvKrdiECsDfFM_7k4Pbhrrxe__BApyKAwMgVyo21HTzyHT31gNmsbX2rTwXH08MWSskGqr1GjTth2DoIEHSe6AN1eE3Q3lUrg-uxpCcHyWL22EftWArDfRBA9he3QjKjGDFVqPTy2Qn5Dee1llYJK10cyLtV1Hed-QpGVSw8kfrGd4HUPMxKKJ-yPlpnP13X9qxy8S7nnqbT9o9Vg7jBSw",
+  "e": "AQAB",
+  "kid": "powersync-key-1",
+  "use": "sig",
+  "alg": "RS256"
+}
