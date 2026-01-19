@@ -52,36 +52,18 @@ fi
 
 echo "Codespace: $CODESPACE"
 
-# Step 2: Wait for setup to complete
+# Step 2: Run setup via SSH
 echo ""
-echo "[2/5] Waiting for setup to complete..."
-while true; do
-  if gh codespace ssh -c "$CODESPACE" -- "test -f /tmp/setup-complete" 2>/dev/null; then
-    echo "Setup complete!"
-    break
-  fi
-  echo "  Still setting up..."
-  sleep 15
-done
+echo "[2/5] Running setup (SparkPos branch: $SPARKPOS_BRANCH)..."
+gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools && .devcontainer/setup.sh $SPARKPOS_BRANCH"
+echo "Setup complete!"
 
-# Checkout SparkPos branch if specified
-if [ "$SPARKPOS_BRANCH" != "master" ]; then
-  echo ""
-  echo "Checking out SparkPos branch: $SPARKPOS_BRANCH"
-  gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools/sparkpos && git fetch origin && git checkout $SPARKPOS_BRANCH"
-fi
-
-# Step 3: Wait for services to start
+# Step 3: Start services
 echo ""
-echo "[3/5] Waiting for services to start..."
-while true; do
-  if gh codespace ssh -c "$CODESPACE" -- "test -f /tmp/services-started" 2>/dev/null; then
-    echo "Services started!"
-    break
-  fi
-  echo "  Starting services..."
-  sleep 5
-done
+echo "[3/5] Starting services..."
+gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools && .devcontainer/start-all.sh" &
+sleep 5
+echo "Services starting in background!"
 
 # Step 4: Get port URLs
 echo ""

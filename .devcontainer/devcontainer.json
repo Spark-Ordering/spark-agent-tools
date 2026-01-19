@@ -9,9 +9,7 @@
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/sshd:1": {}
   },
-  "postCreateCommand": ".devcontainer/setup.sh",
-  "postStartCommand": ".devcontainer/start-all.sh",
-  "forwardPorts": [3000, 8080, 8081, 3306, 54322],
+    "forwardPorts": [3000, 8080, 8081, 3306, 54322],
   "customizations": {
     "vscode": {
       "extensions": ["rebornix.ruby", "vscjava.vscode-java-pack"]

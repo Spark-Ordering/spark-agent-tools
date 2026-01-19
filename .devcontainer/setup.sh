@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
+# Usage: ./setup.sh [sparkpos-branch]
+SPARKPOS_BRANCH=${1:-master}
+
 echo "=== Spark Development Environment Setup ==="
+echo "SparkPos branch: $SPARKPOS_BRANCH"
 
 # Debug: Check if GH_TOKEN is available
 echo "Checking for GH_TOKEN..."
@@ -20,6 +24,12 @@ git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/RequestManager.git" &
 git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos &
 wait
 echo "Repos cloned!"
+
+# Checkout SparkPos branch if not master
+if [ "$SPARKPOS_BRANCH" != "master" ]; then
+  echo "Checking out SparkPos branch: $SPARKPOS_BRANCH"
+  cd sparkpos && git checkout "$SPARKPOS_BRANCH" && cd ..
+fi
 
 # 2. Start MySQL in Docker (runs in background, we'll wait later)
 echo "Starting MySQL..."
