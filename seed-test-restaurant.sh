@@ -11,7 +11,13 @@ set -e
 # Detect environment
 if [ -d /workspaces ]; then
   # Running in Codespace - use docker exec
-  MYSQL_CMD="docker exec -i mysql_sparkpos mysql -uroot -proot spark_backend_development"
+  # Find the MySQL container (could be 'mysql' or 'mysql_sparkpos')
+  MYSQL_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E '^mysql' | head -1)
+  if [ -z "$MYSQL_CONTAINER" ]; then
+    echo "Error: No MySQL container found"
+    exit 1
+  fi
+  MYSQL_CMD="docker exec -i $MYSQL_CONTAINER mysql -uroot -proot SPARK"
 else
   echo "This script should be run from within a Codespace."
   echo "Run it via: gh codespace ssh -c <codespace-name> -- 'cd /workspaces/spark-agent-tools && ./seed-test-restaurant.sh'"
