@@ -55,7 +55,13 @@ echo "Codespace: $CODESPACE"
 # Step 2: Run setup via SSH
 echo ""
 echo "[2/5] Running setup (SparkPos branch: $SPARKPOS_BRANCH)..."
-gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools && .devcontainer/setup.sh $SPARKPOS_BRANCH"
+GH_PAT=$(cat ~/.github_codespace_pat 2>/dev/null || echo "")
+if [ -z "$GH_PAT" ]; then
+  echo "ERROR: No GitHub PAT found at ~/.github_codespace_pat"
+  echo "Please create a GitHub Personal Access Token and save it to ~/.github_codespace_pat"
+  exit 1
+fi
+gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools && export GH_TOKEN='$GH_PAT' && .devcontainer/setup.sh $SPARKPOS_BRANCH"
 echo "Setup complete!"
 
 # Step 3: Start services
