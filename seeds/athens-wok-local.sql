@@ -1160,7 +1160,8 @@ SET @@GLOBAL.GTID_PURGED=/*!80000 '+'*/ '';
 
 LOCK TABLES `open_times` WRITE;
 /*!40000 ALTER TABLE `open_times` DISABLE KEYS */;
-REPLACE INTO `open_times` (`open_time_id`, `restaurant_id`, `menu_category_id`, `days_mask`, `start_time_minute`, `end_time_minute`, `open_or_closed`, `date`, `created_at`, `updated_at`) VALUES (583,23,NULL,255,0,1439,0,NULL,'2024-04-27 00:27:29','2024-09-02 04:49:31');
+-- Always open: all days (255), 0:00-23:59, open_or_closed=1 (OPEN)
+REPLACE INTO `open_times` (`open_time_id`, `restaurant_id`, `menu_category_id`, `days_mask`, `start_time_minute`, `end_time_minute`, `open_or_closed`, `date`, `created_at`, `updated_at`) VALUES (583,23,NULL,255,0,1439,1,NULL,'2024-04-27 00:27:29','2024-09-02 04:49:31');
 /*!40000 ALTER TABLE `open_times` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
