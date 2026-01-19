@@ -45,6 +45,10 @@ cp /workspaces/spark-agent-tools/.devcontainer/env-templates/database.yml config
 echo "[rails] Running db:create db:migrate db:seed..."
 bundle exec rake db:create db:migrate db:seed
 
+# Seed test restaurant data (Athens Wok Local)
+echo "[rails] Seeding test restaurant data..."
+/workspaces/spark-agent-tools/seed-test-restaurant.sh
+
 echo "[rails] Running assets:precompile..."
 bundle exec rake assets:precompile
 
