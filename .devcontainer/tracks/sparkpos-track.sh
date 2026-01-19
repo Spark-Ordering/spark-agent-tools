@@ -35,19 +35,11 @@ echo "[sparkpos] npm install done"
 wait $SUPABASE_PID
 echo "[sparkpos] supabase start done"
 
-# Extract keys and create .env.local
+# Extract keys from Supabase and create .env.local
 echo "[sparkpos] Creating .env.local files..."
-SUPABASE_STATUS=$(supabase status 2>/dev/null)
-export SUPABASE_ANON_KEY=$(echo "$SUPABASE_STATUS" | grep "anon key:" | awk '{print $NF}')
-export SUPABASE_SERVICE_KEY=$(echo "$SUPABASE_STATUS" | grep "service_role key:" | awk '{print $NF}')
-
-# Fallback to well-known local keys
-if [ -z "$SUPABASE_ANON_KEY" ]; then
-  export SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
-fi
-if [ -z "$SUPABASE_SERVICE_KEY" ]; then
-  export SUPABASE_SERVICE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
-fi
+SUPABASE_JSON=$(supabase status --output json 2>/dev/null)
+export SUPABASE_ANON_KEY=$(echo "$SUPABASE_JSON" | jq -r '.ANON_KEY')
+export SUPABASE_SERVICE_KEY=$(echo "$SUPABASE_JSON" | jq -r '.SERVICE_ROLE_KEY')
 
 export SECRET_KEY=$(openssl rand -hex 64)
 
