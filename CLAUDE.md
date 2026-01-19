@@ -81,9 +81,12 @@ This repository contains database query wrapper scripts for the Spark platform. 
 
 #### Spawn Environment
 ```bash
-./mac/spawn-env.sh              # Create new Codespace from master
-./mac/spawn-env.sh some-branch  # Create from specific branch
+./mac/spawn-env.sh --sparkpos <branch>   # ALWAYS specify SparkPos branch
+./mac/spawn-env.sh --sparkpos add-logout-button  # Example with current dev branch
 ```
+
+**CRITICAL: ALWAYS use `--sparkpos <branch>` flag.** The SparkPos master branch often lacks fixes needed for local dev (like SSL localhost checks). Always spawn with the active development branch.
+
 Creates a full dev environment: Codespace, port forwarding, Metro terminal, DevTools.
 
 #### Connect to Metro
