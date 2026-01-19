@@ -7,23 +7,11 @@ SPARKPOS_BRANCH=${1:-master}
 echo "=== Spark Development Environment Setup ==="
 echo "SparkPos branch: $SPARKPOS_BRANCH"
 
-# Get GitHub token (from env or gh CLI)
-if [ -z "$GH_TOKEN" ]; then
-  echo "Getting GitHub token from gh CLI..."
-  GH_TOKEN=$(gh auth token 2>/dev/null)
-fi
-
-if [ -z "$GH_TOKEN" ]; then
-  echo "ERROR: Could not get GitHub token"
-  exit 1
-fi
-echo "GitHub token ready"
-
-# 1. Clone repos in parallel
+# 1. Clone repos (Codespace credential helper handles auth)
 echo "Cloning repositories..."
-git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/spark_backend.git" &
-git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/RequestManager.git" &
-git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos &
+git clone "https://github.com/Spark-Ordering/spark_backend.git" &
+git clone "https://github.com/Spark-Ordering/RequestManager.git" &
+git clone "https://github.com/carlosdelivery/SparkPos.git" sparkpos &
 wait
 echo "Repos cloned!"
 
