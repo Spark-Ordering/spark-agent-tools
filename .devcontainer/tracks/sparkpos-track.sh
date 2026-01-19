@@ -52,12 +52,35 @@ envsubst < "$ENV_TEMPLATES/spark_backend.env" > ../spark_backend/.env.local
 echo "[sparkpos] Running migrations..."
 npx tsx supabase/migrations/run.ts
 
+# Default test restaurant configuration
+RESTAURANT_ID=23
+FRANCHISE_ID=25
+RESTAURANT_NAME="Athens Wok Local"
+RESTAURANT_PASSWORD="password"
+
+# Create restaurant record
+echo "[sparkpos] Creating restaurant record..."
+curl -s -X POST "http://127.0.0.1:54321/functions/v1/create-restaurant" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer dev-secret-123" \
+  -d "{\"restaurantId\": ${RESTAURANT_ID}, \"franchiseId\": ${FRANCHISE_ID}, \"name\": \"${RESTAURANT_NAME}\"}"
+echo ""
+
+# Sync menu catalog from spark_backend
+echo "[sparkpos] Syncing menu catalog..."
+curl -s -X POST "http://127.0.0.1:54321/functions/v1/catalog" \
+  -H "Content-Type: application/json" \
+  -d "{\"restaurant_id\": ${RESTAURANT_ID}, \"pos_menu_franchise_id\": ${FRANCHISE_ID}}"
+echo ""
+
 # Set restaurant password
 echo "[sparkpos] Setting restaurant credentials..."
 curl -s -X POST "http://127.0.0.1:54321/functions/v1/set-restaurant-password" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer dev-secret-123" \
-  -d '{"restaurantId": 113, "password": "dev123"}'
+  -d "{\"restaurantId\": ${RESTAURANT_ID}, \"password\": \"${RESTAURANT_PASSWORD}\"}"
+echo ""
 
 touch /tmp/sparkpos-track-done
 echo "[sparkpos] Track complete!"
+echo "[sparkpos] Login with: Restaurant ID=${RESTAURANT_ID}, Password=${RESTAURANT_PASSWORD}"
