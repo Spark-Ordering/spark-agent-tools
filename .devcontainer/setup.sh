@@ -21,12 +21,6 @@ git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos 
 wait
 echo "Repos cloned!"
 
-# Checkout SparkPos branch if specified (via SPARKPOS_BRANCH env var)
-if [ -n "$SPARKPOS_BRANCH" ] && [ "$SPARKPOS_BRANCH" != "master" ]; then
-  echo "Checking out SparkPos branch: $SPARKPOS_BRANCH"
-  cd sparkpos && git checkout "$SPARKPOS_BRANCH" && cd ..
-fi
-
 # 2. Start MySQL in Docker (runs in background, we'll wait later)
 echo "Starting MySQL..."
 docker run -d --name mysql \

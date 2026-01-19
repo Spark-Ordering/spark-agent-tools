@@ -43,7 +43,6 @@ CODESPACE=$(gh codespace create \
   --branch "$BRANCH" \
   --machine standardLinux32gb \
   --display-name "$ENV_NAME" \
-  --env "SPARKPOS_BRANCH=$SPARKPOS_BRANCH" \
   2>&1 | tee /dev/stderr | tail -1)
 
 if [ -z "$CODESPACE" ]; then
@@ -64,6 +63,13 @@ while true; do
   echo "  Still setting up..."
   sleep 15
 done
+
+# Checkout SparkPos branch if specified
+if [ "$SPARKPOS_BRANCH" != "master" ]; then
+  echo ""
+  echo "Checking out SparkPos branch: $SPARKPOS_BRANCH"
+  gh codespace ssh -c "$CODESPACE" -- "cd /workspaces/spark-agent-tools/sparkpos && git fetch origin && git checkout $SPARKPOS_BRANCH"
+fi
 
 # Step 3: Wait for services to start
 echo ""
