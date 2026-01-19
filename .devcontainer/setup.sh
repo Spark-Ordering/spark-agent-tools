@@ -8,8 +8,6 @@ echo "=== Spark Development Environment Setup ==="
 echo "SparkPos branch: $SPARKPOS_BRANCH"
 
 # 1. Clone repos using GitHub token
-echo "DEBUG: GH_TOKEN length = ${#GH_TOKEN}"
-echo "DEBUG: GH_TOKEN starts with = ${GH_TOKEN:0:4}..."
 if [ -z "$GH_TOKEN" ]; then
   echo "ERROR: GH_TOKEN environment variable not set"
   echo "Pass it via: GH_TOKEN='your_token' ./setup.sh"
@@ -17,7 +15,6 @@ if [ -z "$GH_TOKEN" ]; then
 fi
 
 echo "Cloning repositories..."
-echo "DEBUG: Clone URL will be: https://[token]@github.com/..."
 git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/spark_backend.git" &
 git clone "https://${GH_TOKEN}@github.com/Spark-Ordering/RequestManager.git" &
 git clone "https://${GH_TOKEN}@github.com/carlosdelivery/SparkPos.git" sparkpos &
