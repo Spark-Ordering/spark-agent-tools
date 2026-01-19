@@ -31,14 +31,24 @@ Or use `repo-finder.sh` to locate them dynamically.
 
 ## Services in Codespace
 
-| Service | Port | URL |
-|---------|------|-----|
-| Rails (spark_backend) | 3000 | http://localhost:3000 |
-| Metro (SparkPos) | 8081 | http://localhost:8081 |
-| Supabase API | 54321 | http://localhost:54321 |
-| Supabase Postgres | 54322 | postgresql://postgres:postgres@localhost:54322/postgres |
-| Supabase Studio | 54323 | http://localhost:54323 |
-| MySQL | 3306 | mysql://root:root@localhost:3306 |
+| Service | Port |
+|---------|------|
+| Rails (spark_backend) | 3000 |
+| Metro (SparkPos) | 8081 |
+| Supabase API | 54321 |
+| Supabase Postgres | 54322 |
+| Supabase Studio | 54323 |
+| MySQL | 3306 |
+
+### Accessing Codespace Services
+
+**IMPORTANT:** `localhost` URLs only work if port forwarding is active on the Mac. To get the GitHub forwarded URLs (which always work), use:
+
+```bash
+gh codespace ports -c <codespace-name> --json sourcePort,browseUrl
+```
+
+This returns URLs like `https://<codespace-name>-<port>.app.github.dev`. When giving the user URLs to access Codespace services, **always use these GitHub forwarded URLs**, not localhost.
 
 ## Overview
 
