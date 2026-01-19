@@ -29,11 +29,15 @@ docker run -d --name mysql \
   -e MYSQL_DATABASE=spark_development \
   mysql:8
 
-# 3. Install Supabase CLI
-echo "Installing Supabase CLI..."
+# 3. Install Supabase CLI and Chromium (for React Native DevTools)
+echo "Installing Supabase CLI and Chromium..."
 SUPABASE_DEB_URL=$(curl -sL https://api.github.com/repos/supabase/cli/releases/latest | grep -oE 'https://[^"]+linux_amd64\.deb' | head -1)
 curl -fsSL -o /tmp/supabase.deb "$SUPABASE_DEB_URL"
 sudo dpkg -i /tmp/supabase.deb
+
+# Note: React Native DevTools opens in your LOCAL browser via port forwarding
+# Don't set EDGE_PATH in Codespace - there's no display server
+# Press J in Metro, then open http://localhost:8081/debugger-ui/ on your Mac
 
 # Wait for Docker to be fully ready
 echo "Waiting for Docker to be ready..."
@@ -49,7 +53,30 @@ echo "Starting parallel setup..."
 (
   echo "[supabase] Starting Supabase..."
   cd sparkpos
+
+  # Create admin-secret.ts with dev value
+  cat > supabase/functions/admin-secret.ts << 'SECRETEOF'
+export const ADMIN_SECRET = 'dev-secret-123';
+SECRETEOF
+
   supabase start
+
+  # Wait for npm install to complete (we need dependencies for migrations)
+  while [ ! -f /tmp/npm-done ]; do
+    sleep 2
+  done
+
+  echo "[supabase] Running SparkPos migrations..."
+  DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:54322/postgres" npx tsx supabase/migrations/run.ts
+
+  echo "[supabase] Setting up default restaurant credentials..."
+  # Call the edge function to set password (restaurant_id=113, password=dev123)
+  curl -s -X POST "http://127.0.0.1:54321/functions/v1/set-restaurant-password" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer dev-secret-123" \
+    -d '{"restaurantId": 113, "password": "dev123"}' \
+    && echo "[supabase] Restaurant credentials set (id=113, password=dev123)"
+
   touch /tmp/supabase-done
   echo "[supabase] Done!"
 ) &
@@ -69,6 +96,7 @@ JAVA_PID=$!
   echo "[node] Running npm install..."
   cd sparkpos
   npm install
+  touch /tmp/npm-done
   echo "[node] Done!"
 ) &
 NODE_PID=$!

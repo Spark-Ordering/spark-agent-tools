@@ -85,7 +85,7 @@ cat > "$TUNNEL_SCRIPT" << TUNNEL
 #!/bin/bash
 while true; do
   echo "[\$(date)] Connecting port forward..."
-  gh codespace ports forward 8081:8081 3000:3000 -c "$CODESPACE"
+  gh codespace ports forward 8081:8081 3000:3000 54321:54321 -c "$CODESPACE"
   echo "[\$(date)] Tunnel dropped, reconnecting in 2s..."
   sleep 2
 done
@@ -96,6 +96,66 @@ chmod +x "$TUNNEL_SCRIPT"
 nohup "$TUNNEL_SCRIPT" > /tmp/spark-tunnel.log 2>&1 &
 TUNNEL_PID=$!
 echo "$TUNNEL_PID" > /tmp/spark-tunnel.pid
+
+# Set up adb reverse for emulator
+if adb devices 2>/dev/null | grep -q "emulator"; then
+  adb reverse tcp:8081 tcp:8081
+  adb reverse tcp:3000 tcp:3000
+  adb reverse tcp:54321 tcp:54321
+  echo "adb reverse configured for emulator (Metro, Rails, Supabase)"
+fi
+
+# Step 6: Kill background Metro and open interactive Metro in new Terminal
+echo ""
+echo "[6/7] Opening Metro in new Terminal window..."
+
+# Kill background Metro so we can run interactively
+gh codespace ssh -c "$CODESPACE" -- "pkill -f metro 2>/dev/null || true; pkill -f 'npm start' 2>/dev/null || true" 2>/dev/null || true
+sleep 2
+
+# Open new terminal window with interactive Metro (terminal-agnostic)
+METRO_CMD="gh codespace ssh -c $CODESPACE -- -t 'cd /workspaces/spark-agent-tools/sparkpos && npm start -- --port 8081'"
+
+# Detect terminal app and open appropriately
+if [ "$TERM_PROGRAM" = "iTerm.app" ]; then
+  osascript -e "tell application \"iTerm\"
+    activate
+    set newWindow to (create window with default profile)
+    tell current session of newWindow
+      write text \"$METRO_CMD\"
+    end tell
+  end tell"
+elif [ "$TERM_PROGRAM" = "Apple_Terminal" ]; then
+  osascript -e "tell application \"Terminal\" to do script \"$METRO_CMD\""
+else
+  # Fallback: create a temp script and open with default terminal
+  METRO_SCRIPT="/tmp/spark-metro-$$.sh"
+  echo "#!/bin/bash" > "$METRO_SCRIPT"
+  echo "$METRO_CMD" >> "$METRO_SCRIPT"
+  chmod +x "$METRO_SCRIPT"
+  open -a Terminal "$METRO_SCRIPT"
+fi
+
+# Step 7: Wait for Metro and open DevTools
+echo "[7/7] Waiting for Metro to start, then opening DevTools..."
+
+# Wait for Metro to be ready (serves /json endpoint)
+for i in {1..30}; do
+  if curl -s http://localhost:8081/json | grep -q "devtoolsFrontendUrl" 2>/dev/null; then
+    echo "Metro ready!"
+    sleep 2  # Give app time to connect
+    # Open DevTools in browser
+    DEVTOOLS_PATH=$(curl -s http://localhost:8081/json | jq -r '.[0].devtoolsFrontendUrl // empty')
+    if [ -n "$DEVTOOLS_PATH" ]; then
+      open "http://localhost:8081$DEVTOOLS_PATH"
+      echo "DevTools opened!"
+    else
+      echo "Note: No app connected yet. Reload app, then run: open \"http://localhost:8081\$(curl -s http://localhost:8081/json | jq -r '.[0].devtoolsFrontendUrl')\""
+    fi
+    break
+  fi
+  sleep 2
+done
 
 echo ""
 echo "============================================"
@@ -109,15 +169,15 @@ echo "Local URLs (via port forward):"
 echo "  Rails:    http://localhost:3000"
 echo "  Metro:    http://localhost:8081"
 echo ""
-echo "Remote URLs:"
-echo "  Rails:    $RAILS_URL"
-echo "  Metro:    $METRO_URL"
-echo "  Supabase: $SUPABASE_URL"
+echo "Metro is running in a separate Terminal window."
+echo "  R - reload app"
+echo "  D - dev menu"
+echo "  J - reopen DevTools"
 echo ""
 echo "Commands:"
 echo "  SSH:      gh codespace ssh -c $CODESPACE"
 echo "  VS Code:  gh codespace code -c $CODESPACE"
-echo "  Logs:     tail -f /tmp/spark-tunnel.log"
+echo "  DevTools: open \"http://localhost:8081\$(curl -s http://localhost:8081/json | jq -r '.[0].devtoolsFrontendUrl')\""
 echo "  Stop:     kill \$(cat /tmp/spark-tunnel.pid)"
 echo ""
 echo "Port forwarding running in background (PID: $TUNNEL_PID)"

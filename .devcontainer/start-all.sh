@@ -39,7 +39,7 @@ cd "$WORKDIR/spark_backend"
 pkill -f "rails server" 2>/dev/null || true
 nohup bundle exec rails server -p 3000 -b 0.0.0.0 > /tmp/rails.log 2>&1 &
 
-# Start Metro bundler
+# Start Metro bundler (background mode - for interactive mode, kill this and run manually)
 echo "Starting Metro bundler on port 8081..."
 cd "$WORKDIR/sparkpos"
 pkill -f "metro" 2>/dev/null || true

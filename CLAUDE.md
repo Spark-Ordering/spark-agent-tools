@@ -75,6 +75,30 @@ This repository contains database query wrapper scripts for the Spark platform. 
 - Auto-restarts on crash (RequestManager)
 - Runs worker and server together (spark_backend)
 
+### Codespace Management Scripts (mac/)
+
+**IMPORTANT FOR CLAUDE:** Always use these scripts instead of manually writing osascript or terminal commands.
+
+#### Spawn Environment
+```bash
+./mac/spawn-env.sh              # Create new Codespace from master
+./mac/spawn-env.sh some-branch  # Create from specific branch
+```
+Creates a full dev environment: Codespace, port forwarding, Metro terminal, DevTools.
+
+#### Connect to Metro
+```bash
+./mac/connect-metro.sh                    # Auto-detect Codespace
+./mac/connect-metro.sh <codespace-name>   # Specific Codespace
+```
+**Use this script to open Metro in a new terminal window.** Do NOT manually write osascript commands - this script handles iTerm2, Terminal.app, and other terminals automatically.
+
+#### Teardown Environment
+```bash
+./mac/teardown-env.sh              # Delete current Codespace
+./mac/teardown-env.sh <name>       # Delete specific Codespace
+```
+
 ## Architecture
 
 ### Shared Repository Finder (`repo-finder.sh`)
