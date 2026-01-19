@@ -52,6 +52,10 @@ envsubst < "$ENV_TEMPLATES/spark_backend.env" > ../spark_backend/.env.local
 echo "[sparkpos] Running migrations..."
 npx tsx supabase/migrations/run.ts
 
+# Create PowerSync publication (required for sync to work)
+echo "[sparkpos] Creating PowerSync publication..."
+docker exec supabase_db_sparkpos psql -U postgres -c "CREATE PUBLICATION powersync FOR ALL TABLES;" 2>/dev/null || echo "[sparkpos] Publication already exists"
+
 # Default test restaurant configuration
 RESTAURANT_ID=23
 FRANCHISE_ID=25
