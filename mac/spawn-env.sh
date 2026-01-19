@@ -29,6 +29,8 @@ done
 REPO="Spark-Ordering/spark-agent-tools"
 ENV_NAME="spark-${BRANCH}"
 
+START_TIME=$(date +%s)
+
 echo "=== Spark Environment Spawner ==="
 echo "Branch: $BRANCH"
 if [ "$SPARKPOS_BRANCH" != "master" ]; then
@@ -176,10 +178,24 @@ for i in {1..30}; do
   sleep 2
 done
 
+# Calculate total time
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+MINUTES=$((DURATION / 60))
+SECONDS=$((DURATION % 60))
+
+# Open Rails and VS Code in browser
+echo ""
+echo "[8/8] Opening Rails and VS Code..."
+open "http://localhost:3000"
+open "https://github.com/codespaces/$CODESPACE"
+
 echo ""
 echo "============================================"
 echo "  SPARK ENVIRONMENT READY"
 echo "============================================"
+echo ""
+echo "Setup time: ${MINUTES}m ${SECONDS}s"
 echo ""
 echo "Codespace:  $CODESPACE"
 echo "Branch:     $BRANCH"
