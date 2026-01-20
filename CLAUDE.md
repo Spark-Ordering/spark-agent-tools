@@ -73,10 +73,15 @@ This returns URLs like `https://<codespace-name>-<port>.app.github.dev`. When gi
 |---------|----------|
 | RequestManager | `/tmp/requestmanager.log` |
 | Edge Functions | `/tmp/edge-functions.log` |
+| spark_backend (Rails) | `/tmp/rails.log` |
+| spark_backend (Worker) | `/tmp/worker.log` |
 
 ### Starting Services with Logs
 
 ```bash
+# spark_backend with workers (Rails + delayed_job)
+cd /workspaces/spark-agent-tools && ./start-spark-backend.sh
+
 # RequestManager (logs automatically to /tmp/requestmanager.log)
 cd /workspaces/spark-agent-tools/RequestManager && ./start-codespace.sh &
 
