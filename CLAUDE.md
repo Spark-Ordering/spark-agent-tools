@@ -65,6 +65,32 @@ gh codespace ports -c <codespace-name> --json sourcePort,browseUrl
 
 This returns URLs like `https://<codespace-name>-<port>.app.github.dev`. When giving the user URLs to access Codespace services, **always use these GitHub forwarded URLs**, not localhost.
 
+## Codespace Log Locations
+
+**Always check these paths for service logs:**
+
+| Service | Log Path |
+|---------|----------|
+| RequestManager | `/tmp/requestmanager.log` |
+| Edge Functions | `/tmp/edge-functions.log` |
+
+### Starting Services with Logs
+
+```bash
+# RequestManager (logs automatically to /tmp/requestmanager.log)
+cd /workspaces/spark-agent-tools/RequestManager && ./start-codespace.sh &
+
+# Edge Functions
+cd /workspaces/spark-agent-tools/sparkpos && npx supabase functions serve --env-file supabase/functions/.env > /tmp/edge-functions.log 2>&1 &
+```
+
+### Reading Logs
+
+```bash
+tail -f /tmp/requestmanager.log    # Follow RequestManager logs
+tail -f /tmp/edge-functions.log    # Follow Edge Function logs
+```
+
 ## Overview
 
 This repository contains database query wrapper scripts for the Spark platform. These scripts provide convenient access to MySQL (spark_backend) and PostgreSQL (SparkPos) databases by automatically loading credentials from environment files.
