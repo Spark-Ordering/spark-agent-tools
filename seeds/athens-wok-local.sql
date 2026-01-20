@@ -1178,6 +1178,14 @@ SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;
 
 -- Dump completed on 2026-01-19 13:12:01
 
+-- addresses (required for restaurant location - loadRestaurants() JOINs on this)
+REPLACE INTO `addresses` (`address_id`, `addr_line_1`, `apartment_number`, `city`, `zip_code`, `longitude`, `latitude`, `address_type`, `created_at`, `updated_at`, `verified_status`, `original_addr_line_1`, `suggested_addr_line_1`, `state`, `city_id`, `address_status`, `pending_address_status`, `address_lookup_type`, `version`) VALUES
+(2, '493 east clayton st', NULL, 'Athens', '30601', -83.3733, 33.9592, 0, NOW(), NOW(), 1, '493 East Clayton Street', '493 east clayton st', 9, 2, 0, 0, 0, 1);
+
+-- counties (required for sales tax - loadRestaurants() JOINs on this)
+REPLACE INTO `counties` (`county_id`, `name`, `state`, `sales_tax_percent`, `created_at`, `updated_at`) VALUES
+(2, 'Oconee', 9, 7.000, NOW(), NOW());
+
 -- payment_merchant_accounts (required for card payments)
 -- Using test Stripe keys; payment_merchant_account_type=1 is Stripe
 REPLACE INTO `payment_merchant_accounts` (`payment_merchant_account_id`, `restaurant_id`, `payment_merchant_account_type`, `created_at`, `updated_at`, `external_id`, `private_key`, `public_key`) VALUES
