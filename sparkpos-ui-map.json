@@ -1,0 +1,99 @@
+{
+  "meta": {
+    "app": "SparkPos",
+    "screenResolution": "2560x1600",
+    "lastUpdated": "2025-01-26"
+  },
+  "screens": {
+    "main": {
+      "description": "Main POS screen with menu categories and products",
+      "elements": {
+        "hamburgerMenu": { "bounds": [8, 15, 104, 113], "center": [56, 64] },
+        "dineInButton": { "bounds": [512, 144, 1051, 229], "center": [782, 187] },
+        "customItemProduct": { "center": [2366, 292], "note": "Right of Pumpkin Pie in product grid" }
+      }
+    },
+    "orderInProgress": {
+      "description": "Main screen with items in cart",
+      "elements": {
+        "moreButton": { "bounds": [528, 1379, 686, 1534], "center": [607, 1456] },
+        "saveButton": { "bounds": [702, 1379, 861, 1534], "center": [782, 1456] },
+        "payButton": { "bounds": [877, 1379, 1035, 1534], "center": [956, 1456] }
+      }
+    },
+    "customerDetailsDialog": {
+      "description": "Order type selection dialog that appears before checkout",
+      "elements": {
+        "dineInOption": { "note": "First option, usually pre-selected" },
+        "pickupOption": { "note": "Second option" },
+        "deliveryOption": { "note": "Third option" },
+        "toGoOption": { "note": "Fourth option" },
+        "nextButton": { "bounds": [928, 865, 1632, 960], "center": [1280, 912] }
+      }
+    },
+    "customItemDialog": {
+      "description": "Custom item entry dialog with price field",
+      "elements": {
+        "descriptionField": { "bounds": [1148, 388, 2496, 559], "center": [1822, 474] },
+        "priceField": { "bounds": [1148, 672, 2496, 780], "center": [1822, 726] },
+        "cancelButton": { "bounds": [1128, 1433, 1818, 1550], "center": [1473, 1491] },
+        "addToCartButton": { "bounds": [1842, 1435, 2528, 1548], "center": [2185, 1491] }
+      },
+      "notes": [
+        "Price field accepts whole dollars (enter '1' for $1.00)",
+        "Tap price field to show numpad, use adb input text to type value",
+        "Numpad buttons are custom component - not in accessibility tree",
+        "Button positions shift when numpad is dismissed - always use fresh dump"
+      ]
+    },
+    "checkout": {
+      "description": "Payment screen - Pay For This Order",
+      "elements": {
+        "backButton": { "bounds": [8, 0, 168, 128], "center": [88, 64] },
+        "chargeCardButton": { "bounds": [885, 289, 2528, 400], "center": [1706, 344], "note": "Dynamic amount" },
+        "cashExactAmount": { "bounds": [885, 531, 1278, 642], "center": [1081, 586], "note": "First cash button - exact amount" },
+        "cash100": { "bounds": [1278, 531, 1671, 642], "center": [1474, 586], "note": "$1.00 button" },
+        "cash000": { "bounds": [1671, 531, 2064, 642], "center": [1867, 586], "note": "$0.00 button" },
+        "cashCustom": { "bounds": [2064, 531, 2528, 642], "center": [2296, 586], "note": "Custom amount" },
+        "payCashButton": { "bounds": [885, 666, 2528, 777], "center": [1706, 721] }
+      }
+    },
+    "orderSuccess": {
+      "description": "Order placed successfully confirmation screen",
+      "elements": {
+        "closeButton": { "bounds": [8, 0, 168, 128], "center": [88, 64] }
+      },
+      "notes": [
+        "Shows Order #XX and 'Placed Successfully'",
+        "Tap X to return to main screen immediately"
+      ]
+    }
+  },
+  "interactions": {
+    "addCustomItemAndPayCash": {
+      "description": "Add a custom priced item and pay with cash",
+      "steps": [
+        { "action": "tap", "element": "main.customItemProduct", "note": "Opens custom item dialog" },
+        { "action": "adb_text", "value": "<price>", "note": "Type price as whole dollars (1 = $1.00)" },
+        { "action": "key", "value": "back", "note": "Dismiss keyboard" },
+        { "action": "dump", "note": "Get fresh Add to Cart coordinates" },
+        { "action": "tap", "element": "customItemDialog.addToCartButton", "note": "Adds item to cart" },
+        { "action": "tap", "element": "orderInProgress.payButton", "note": "Opens Customer Details dialog" },
+        { "action": "tap", "element": "customerDetailsDialog.nextButton", "note": "Proceed to checkout" },
+        { "action": "tap", "element": "checkout.cashExactAmount", "note": "Select exact cash amount" },
+        { "action": "tap", "element": "checkout.payCashButton", "note": "Complete cash payment" },
+        { "action": "tap", "element": "orderSuccess.closeButton", "note": "Dismiss success screen" }
+      ]
+    }
+  },
+  "tips": [
+    "Use 'emu.sh dump' to get fresh element bounds - positions can shift",
+    "Custom components (numpad) don't appear in accessibility tree - use adb input text",
+    "After tapping PAY, Customer Details dialog appears - tap Next to proceed",
+    "After adding items, button positions may change - always verify with dump",
+    "Use 'emu.sh tap-element <screen>.<element>' for memoized coordinates",
+    "Price field: enter whole dollars only (1 for $1.00, not 100 for $1.00)",
+    "Checkout cash buttons: first button shows exact amount, then $1.00, $0.00, Custom",
+    "X button on success screen is at (88, 64)"
+  ]
+}

@@ -1191,4 +1191,14 @@ REPLACE INTO `counties` (`county_id`, `name`, `state`, `sales_tax_percent`, `cre
 REPLACE INTO `payment_merchant_accounts` (`payment_merchant_account_id`, `restaurant_id`, `payment_merchant_account_type`, `created_at`, `updated_at`, `external_id`, `private_key`, `public_key`) VALUES
 (1000, 23, 1, NOW(), NOW(), NULL, 'sk_test_51Mqzx8CMuwMc3J0pVpU0r0wPbsWHJD5a5VIP78zwEOEyUzuGIy0vpgoovpL2lSc16MFlZ6rqC9bsmW5yaWK3L3N400D6dcs85C', 'pk_test_51Mqzx8CMuwMc3J0ptq2xar9gDD2Nue6WQx4FU1LZCIQUDx9t2wfPjB66a9a89WkXTfqhqfQfb2ArU036S1OLhVOB00XUJ1mTdO');
 
+-- billing_accounts (required for order processing - createOrder() looks this up by reference_code)
+REPLACE INTO `billing_accounts` (`billing_account_id`, `franchise_id`, `name`, `created_at`, `updated_at`, `driver_id`, `account_type`, `reference_code`, `restaurant_id`, `billing_account_payment_preference`, `billing_account_invoice_preference`, `default_payment_card_id`, `billing_account_payment_permission`, `staff_id`, `routing_number_id`, `account_number_id`, `account_number_suffix`, `routing_number_salt`, `account_number_salt`) VALUES
+(14, NULL, 'MX Merchant Card Processor Account', '2023-04-08 00:00:00', '2023-04-08 00:00:00', NULL, 1, 'MX_MERCHANT_ACCOUNT', NULL, 0, 0, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL);
+
+-- integration_accounts (required for order sync to SparkPos)
+-- integration_account_type=2 is SparkPos, status=0 is ACTIVE
+-- merchant_id is the SparkPos restaurant_id used in the sync
+REPLACE INTO `integration_accounts` (`integration_account_id`, `restaurant_id`, `allow_linking_for_all`, `merchant_id`, `api_key`, `created_at`, `updated_at`, `external_value_1`, `external_value_2`, `last_order_sync_date`, `integration_account_status`, `integration_account_type`, `settings`, `integration_account_call_confirmation`) VALUES
+(10, 23, 1, '23', 'test', NOW(), NOW(), NULL, NULL, NULL, 0, 2, '{}', 0);
+
 SET FOREIGN_KEY_CHECKS = 1;
