@@ -1,11 +1,14 @@
 #!/bin/bash
 
-# mysql-query.sh - Run MySQL queries
+# mysql-query.sh - Run MySQL queries against spark_backend MySQL
 # Usage: ./mysql-query.sh "SELECT * FROM table"
 #
 # Environment handling:
 # - On Mac: Queries staging MySQL via AWS_DATABASE_URL from spark_backend/.env.local
 # - On Codespace: Queries local MySQL Docker container (database: SPARK)
+#
+# Note: MySQL only has one environment (staging). For PostgreSQL with multiple
+# environments (develop1, develop2, etc.), use postgres-query.sh instead.
 
 set -e
 
@@ -55,6 +58,8 @@ else
     run_query() {
         mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$1" 2>&1 | grep -v "Warning" || true
     }
+
+    echo "# Querying: MySQL staging ($DB_HOST)"
 fi
 
 # Run the query

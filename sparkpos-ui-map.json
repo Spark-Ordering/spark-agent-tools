@@ -18,7 +18,7 @@
       "elements": {
         "moreButton": { "bounds": [528, 1379, 686, 1534], "center": [607, 1456] },
         "saveButton": { "bounds": [702, 1379, 861, 1534], "center": [782, 1456] },
-        "payButton": { "bounds": [877, 1379, 1035, 1534], "center": [956, 1456] }
+        "payButton": { "bounds": [877, 1379, 1035, 1534], "center": [956, 1420], "note": "Tap upper portion (y=1420) to avoid debugger bar overlap" }
       }
     },
     "customerDetailsDialog": {
@@ -37,7 +37,7 @@
         "descriptionField": { "bounds": [1148, 388, 2496, 559], "center": [1822, 474] },
         "priceField": { "bounds": [1148, 672, 2496, 780], "center": [1822, 726] },
         "cancelButton": { "bounds": [1128, 1433, 1818, 1550], "center": [1473, 1491] },
-        "addToCartButton": { "bounds": [1842, 1435, 2528, 1548], "center": [2185, 1491] }
+        "addToCartButton": { "bounds": [1842, 1435, 2528, 1548], "center": [2185, 1450], "note": "Tap upper portion (y=1450) to avoid debugger bar overlap at bottom" }
       },
       "notes": [
         "Price field accepts whole dollars (enter '1' for $1.00)",
@@ -58,6 +58,67 @@
         "payCashButton": { "bounds": [885, 666, 2528, 777], "center": [1706, 721] }
       }
     },
+    "tipScreen": {
+      "description": "Add a Tip screen - Square-style layout, appears during card payment flow",
+      "elements": {
+        "cancelButton": { "bounds": [2192, 232, 2400, 323], "center": [2296, 277], "note": "Top-right cancel, acts as No Tip" },
+        "preset1": { "bounds": [80, 523, 876, 963], "center": [478, 743], "note": "First preset (18% or $1 for small orders)" },
+        "preset2": { "bounds": [882, 523, 1678, 963], "center": [1280, 743], "note": "Second preset (20% or $2)" },
+        "preset3": { "bounds": [1684, 523, 2480, 963], "center": [2082, 743], "note": "Third preset (25% or $3)" },
+        "customTip": { "bounds": [80, 969, 1277, 1209], "center": [678, 1089] },
+        "noTip": { "bounds": [1283, 969, 2480, 1209], "center": [1881, 1089] }
+      },
+      "notes": [
+        "Appears after tapping Charge button on checkout",
+        "Small orders (<$10) show flat dollar amounts ($1/$2/$3/$5)",
+        "Larger orders show percentages (18%/20%/25%)",
+        "Blue buttons on gray background, Square-style layout"
+      ]
+    },
+    "drawer": {
+      "description": "Hamburger drawer menu items",
+      "elements": {
+        "menuHome": { "bounds": [0, 120, 536, 232], "center": [268, 176] },
+        "orderList": { "bounds": [0, 244, 536, 356], "center": [268, 300] },
+        "tenderReport": { "bounds": [0, 368, 536, 480], "center": [268, 424] },
+        "tipReport": { "bounds": [0, 480, 536, 592], "center": [268, 536] },
+        "debugConsole": { "bounds": [0, 604, 536, 716], "center": [268, 660] },
+        "settings": { "bounds": [0, 716, 536, 828], "center": [268, 772], "note": "Only visible when FORCE_SETTINGS_UNLOCKED=true or after unlock sequence" }
+      }
+    },
+    "settings": {
+      "description": "Settings page - left sidebar with setting categories",
+      "elements": {
+        "terminalSettings": { "bounds": [0, 318, 558, 425], "center": [279, 371] },
+        "cardReader": { "bounds": [0, 425, 558, 532], "center": [279, 478] },
+        "printers": { "bounds": [0, 532, 558, 639], "center": [279, 585] },
+        "restaurantSettings": { "bounds": [0, 639, 558, 746], "center": [279, 692] },
+        "menuSettings": { "bounds": [0, 746, 558, 853], "center": [279, 799] },
+        "preModifiers": { "bounds": [0, 853, 558, 960], "center": [279, 906] },
+        "lockSettings": { "bounds": [608, 1370, 2512, 1450], "center": [1560, 1410] }
+      }
+    },
+    "cardReader": {
+      "description": "Card Reader settings page",
+      "elements": {
+        "linkDevice": { "bounds": [642, 1106, 885, 1186], "center": [763, 1146] },
+        "checkConnection": { "bounds": [911, 1108, 1241, 1188], "center": [1076, 1148] },
+        "activateDevice": { "bounds": [644, 1240, 937, 1320], "center": [790, 1280] },
+        "cancelActiveTransaction": { "bounds": [965, 1240, 1394, 1320], "center": [1179, 1280] }
+      }
+    },
+    "debuggerWarning": {
+      "description": "Yellow debugger warning bar at bottom of screen - intercepts taps on buttons behind it",
+      "elements": {
+        "dismissBar": { "bounds": [20, 1455, 2540, 1550], "center": [1280, 1502], "note": "Tap to open debugger, or tap X on right side to dismiss" }
+      },
+      "notes": [
+        "This bar overlaps the bottom ~100px of the screen and steals taps from buttons underneath",
+        "Add to Cart button center (2185, 1491) falls in this zone - tap higher (2185, 1450) to avoid",
+        "Not always visible in accessibility dump but still intercepts touches",
+        "Force-stopping and restarting the app sometimes clears it"
+      ]
+    },
     "orderSuccess": {
       "description": "Order placed successfully confirmation screen",
       "elements": {
@@ -70,6 +131,17 @@
     }
   },
   "interactions": {
+    "setupCardReader": {
+      "description": "Link, activate, and check connection on Finix card reader. Run after deploy or when card reader needs reconnecting.",
+      "steps": [
+        { "action": "tap", "element": "main.hamburgerMenu", "wait": 2, "note": "Open drawer" },
+        { "action": "tap", "element": "drawer.settings", "wait": 2, "note": "Open Settings" },
+        { "action": "tap", "element": "settings.cardReader", "wait": 2, "note": "Open Card Reader page" },
+        { "action": "tap", "element": "cardReader.linkDevice", "wait": 1, "note": "Link the Finix terminal" },
+        { "action": "tap", "element": "cardReader.activateDevice", "wait": 1, "note": "Activate the terminal" },
+        { "action": "tap", "element": "cardReader.checkConnection", "wait": 2, "note": "Verify connection" }
+      ]
+    },
     "addCustomItemAndPayCash": {
       "description": "Add a custom priced item and pay with cash",
       "steps": [
