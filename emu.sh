@@ -578,14 +578,26 @@ case "$1" in
     tap-id)
         # Tap on any UI element by its accessibilityLabel (content-desc)
         # Note: For React Native Paper components, use accessibilityLabel prop, not testID
+        # Use -p flag for partial matching
+        PARTIAL_MATCH=false
+        if [ "$2" = "-p" ]; then
+            PARTIAL_MATCH=true
+            shift
+        fi
         if [ -z "$2" ]; then
-            echo "Usage: emu.sh tap-id <accessibilityLabel>"
+            echo "Usage: emu.sh tap-id [-p] <accessibilityLabel>"
+            echo "  -p  Enable partial matching (contains)"
             echo "Example: emu.sh tap-id 'login-button'"
+            echo "Example: emu.sh tap-id -p 'Crab'  # matches 'Crab Rangoon...'"
             exit 1
         fi
         $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
         $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-        TID_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep "content-desc=\"$2\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        if [ "$PARTIAL_MATCH" = true ]; then
+            TID_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "content-desc=\"[^\"]*$2[^\"]*\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        else
+            TID_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep "content-desc=\"$2\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        fi
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         if [ -n "$TID_BOUNDS" ]; then
@@ -602,14 +614,26 @@ case "$1" in
 
     tap-text)
         # Tap on any UI element by its text content
+        # Use -p flag for partial matching
+        PARTIAL_MATCH=false
+        if [ "$2" = "-p" ]; then
+            PARTIAL_MATCH=true
+            shift
+        fi
         if [ -z "$2" ]; then
-            echo "Usage: emu.sh tap-text <text>"
+            echo "Usage: emu.sh tap-text [-p] <text>"
+            echo "  -p  Enable partial matching (contains)"
             echo "Example: emu.sh tap-text 'Settings'"
+            echo "Example: emu.sh tap-text -p 'Crab'  # matches 'Crab Rangoon...'"
             exit 1
         fi
         $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
         $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-        TT_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep "text=\"$2\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        if [ "$PARTIAL_MATCH" = true ]; then
+            TT_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "text=\"[^\"]*$2[^\"]*\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        else
+            TT_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep "text=\"$2\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        fi
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         if [ -n "$TT_BOUNDS" ]; then
@@ -762,6 +786,26 @@ case "$1" in
             sed 's/.*class="\([^"]*\)".*content-desc="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 desc="\2" bounds=\3/' | \
             sed 's/.*class="\([^"]*\)".*text="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 text="\2" bounds=\3/' | \
             grep -v "^  $" | head -50
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        ;;
+
+    dump-texts)
+        # Get all unique text values in the UI
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        echo "All text values in UI:"
+        grep -o 'text="[^"]*"' /tmp/ui.xml | sort -u | sed 's/text="//; s/"$//'
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        ;;
+
+    dump-descs)
+        # Get all unique content-desc values in the UI
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        echo "All content-desc values in UI:"
+        grep -o 'content-desc="[^"]*"' /tmp/ui.xml | sort -u | sed 's/content-desc="//; s/"$//' | grep -v "^$"
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         ;;
