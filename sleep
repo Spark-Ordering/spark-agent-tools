@@ -1,0 +1,36 @@
+#!/bin/bash
+# Wrapper for sleep that caps at 60 seconds
+# Prevents Claude from waiting excessively long
+
+MAX_SECONDS=60
+
+if [[ $# -eq 0 ]]; then
+  /bin/sleep
+  exit $?
+fi
+
+# Parse the sleep argument (handles formats like 60, 60s, 1m, etc.)
+arg="$1"
+
+# Extract numeric part and suffix
+if [[ "$arg" =~ ^([0-9]+)([smhd]?)$ ]]; then
+  num="${BASH_REMATCH[1]}"
+  suffix="${BASH_REMATCH[2]}"
+
+  case "$suffix" in
+    s|"") seconds=$num ;;
+    m) seconds=$((num * 60)) ;;
+    h) seconds=$((num * 3600)) ;;
+    d) seconds=$((num * 86400)) ;;
+  esac
+
+  if [[ $seconds -gt $MAX_SECONDS ]]; then
+    echo "sleep: capped from ${seconds}s to ${MAX_SECONDS}s" >&2
+    seconds=$MAX_SECONDS
+  fi
+
+  /bin/sleep "$seconds"
+else
+  # Fallback for complex formats
+  /bin/sleep "$@"
+fi

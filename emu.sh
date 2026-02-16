@@ -18,6 +18,8 @@
 #   emu.sh swipe 500 1000 500 500
 #   emu.sh text "hello world"
 #   emu.sh key back
+#   emu.sh tap-nth icon Edit 0     - Tap 0th element with Edit in content-desc
+#   emu.sh tap-nth class ImageView 2 - Tap 2nd ImageView
 
 set -e
 
@@ -39,10 +41,18 @@ get_device() {
 
 DEVICE=$(get_device)
 
-if [ -z "$DEVICE" ]; then
-    echo "Error: No device found"
-    exit 1
-fi
+# Commands that don't require a device
+case "$1" in
+    eiu|run-eiu|list|devices|help|"")
+        # These commands can run without a device
+        ;;
+    *)
+        if [ -z "$DEVICE" ]; then
+            echo "Error: No device found"
+            exit 1
+        fi
+        ;;
+esac
 
 ADB="adb -s $DEVICE"
 
@@ -58,12 +68,19 @@ case "$1" in
         ;;
 
     tap|t)
-        if [ -z "$2" ] || [ -z "$3" ]; then
-            echo "Usage: emu.sh tap <x> <y>"
-            exit 1
-        fi
-        $ADB shell input tap "$2" "$3"
-        echo "Tapped at $2, $3"
+        echo "ERROR: Direct coordinate tapping is disabled."
+        echo ""
+        echo "Use one of these ID-based commands instead:"
+        echo "  emu.sh tap-id <accessibility-label>   - Tap element by content-desc"
+        echo "  emu.sh tap-text <visible-text>        - Tap element by visible text"
+        echo "  emu.sh tap-nth <type> <pattern> <n>   - Tap nth matching element"
+        echo ""
+        echo "For text input fields:"
+        echo "  emu.sh clear-field                    - Clear focused text field (cf)"
+        echo "  emu.sh replace-text <string>          - Clear field and type new text (rt)"
+        echo ""
+        echo "Run 'emu.sh dump' first to see available element IDs."
+        exit 1
         ;;
 
     swipe|sw)
@@ -85,6 +102,28 @@ case "$1" in
         escaped=$(echo "$2" | sed 's/ /%s/g')
         $ADB shell input text "$escaped"
         echo "Typed: $2"
+        ;;
+
+    clear-field|cf)
+        # Select all (Ctrl+A) then delete
+        $ADB shell input keyevent KEYCODE_MOVE_END
+        # Delete 50 chars (should be enough for most fields)
+        for i in {1..50}; do $ADB shell input keyevent KEYCODE_DEL; done
+        echo "Field cleared"
+        ;;
+
+    replace-text|rt)
+        if [ -z "$2" ]; then
+            echo "Usage: emu.sh replace-text <string>"
+            exit 1
+        fi
+        # Clear field first
+        $ADB shell input keyevent KEYCODE_MOVE_END
+        for i in {1..50}; do $ADB shell input keyevent KEYCODE_DEL; done
+        # Type new text
+        escaped=$(echo "$2" | sed 's/ /%s/g')
+        $ADB shell input text "$escaped"
+        echo "Replaced with: $2"
         ;;
 
     key|k)
@@ -222,10 +261,10 @@ case "$1" in
         echo "Opening hamburger menu..."
         $ADB shell input tap 56 64
         sleep 2
-        # Dump to find Settings
+        # Find Settings by accessibilityLabel (desc attribute)
         $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
         $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-        SETTINGS_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'text="Settings"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        SETTINGS_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep 'desc=".*Settings"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         if [ -n "$SETTINGS_BOUNDS" ]; then
@@ -235,9 +274,9 @@ case "$1" in
             echo "Tapping Settings at $cx, $cy"
             $ADB shell input tap "$cx" "$cy"
             sleep 2
-            echo "Settings opened. Use 'emu.sh shot' to verify."
+            echo "Settings opened."
         else
-            echo "Settings not found in drawer. Is FORCE_SETTINGS_UNLOCKED=true set?"
+            echo "Settings not found. Is FORCE_SETTINGS_UNLOCKED=true set?"
         fi
         ;;
 
@@ -384,10 +423,10 @@ case "$1" in
         # Navigate to Menu Settings page
         "$0" nav-settings
         sleep 1
-        # Find and tap "Menu Settings" in the sidebar
+        # Find "Menu Settings" by accessibilityLabel
         $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
         $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-        MS_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'text="Menu Settings"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        MS_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep 'desc="Menu Settings"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         if [ -n "$MS_BOUNDS" ]; then
@@ -397,9 +436,54 @@ case "$1" in
             echo "Tapping Menu Settings at $cx, $cy"
             $ADB shell input tap "$cx" "$cy"
             sleep 2
-            echo "Menu Settings opened. Use 'emu.sh shot' to verify."
+            echo "Menu Settings opened."
         else
-            echo "Menu Settings not found. Try 'emu.sh shot' to see current screen."
+            echo "Menu Settings not found."
+        fi
+        ;;
+
+    nav-menu|nav-home)
+        # Navigate to Menu Home (the main POS ordering screen)
+        echo "Opening hamburger menu..."
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        echo "UI hierchary dumped to: /sdcard/ui.xml"
+        # Find hamburger menu icon (usually at top-left, content-desc contains "menu" or "navigation")
+        MENU_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'content-desc="[^"]*menu[^"]*"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        if [ -z "$MENU_BOUNDS" ]; then
+            # Try looking for hamburger icon by class
+            MENU_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'content-desc=".*navigation.*"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        fi
+        if [ -n "$MENU_BOUNDS" ]; then
+            read x1 y1 x2 y2 <<< "$MENU_BOUNDS"
+            cx=$(( (x1 + x2) / 2 ))
+            cy=$(( (y1 + y2) / 2 ))
+            $ADB shell input tap "$cx" "$cy"
+        else
+            # Fallback to known coordinate for hamburger
+            $ADB shell input tap 56 64
+        fi
+        sleep 1
+        # Find "Menu" option in the drawer
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        # Try content-desc="Menu Home" first, then text="Menu Home"
+        MENU_NAV_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep 'content-desc="Menu Home"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        if [ -z "$MENU_NAV_BOUNDS" ]; then
+            MENU_NAV_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep 'text="Menu Home"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        fi
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        if [ -n "$MENU_NAV_BOUNDS" ]; then
+            read x1 y1 x2 y2 <<< "$MENU_NAV_BOUNDS"
+            cx=$(( (x1 + x2) / 2 ))
+            cy=$(( (y1 + y2) / 2 ))
+            echo "Tapping Menu at $cx, $cy"
+            $ADB shell input tap "$cx" "$cy"
+            sleep 1
+            echo "Menu home opened."
+        else
+            echo "Menu option not found in drawer. Try 'emu.sh dump-all' to see available elements."
         fi
         ;;
 
@@ -407,10 +491,10 @@ case "$1" in
         # Navigate to Menu Editor (Settings → Menu Settings → Edit Menu)
         "$0" nav-menu-settings
         sleep 1
-        # Find and tap "Edit Menu" button
+        # Find "Edit Menu" by accessibilityLabel
         $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
         $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-        EM_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'text="Edit Menu"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        EM_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep 'desc="Edit Menu"' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
         rm -f /tmp/ui.xml
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         if [ -n "$EM_BOUNDS" ]; then
@@ -420,9 +504,99 @@ case "$1" in
             echo "Tapping Edit Menu at $cx, $cy"
             $ADB shell input tap "$cx" "$cy"
             sleep 2
-            echo "Menu Editor opened. Use 'emu.sh shot' to verify."
+            echo "Menu Editor opened."
         else
-            echo "Edit Menu button not found. Try 'emu.sh shot' to see current screen."
+            echo "Edit Menu button not found."
+        fi
+        ;;
+
+    login)
+        # Login with test credentials (Restaurant ID: 23, Password: password)
+        # Uses accessibilityLabel (content-desc) for reliable element targeting
+        # Note: React Native Paper components use accessibilityLabel, not testID
+        RESTAURANT_ID="${2:-23}"
+        PASSWORD="${3:-password}"
+
+        echo "Logging in with Restaurant ID: $RESTAURANT_ID"
+
+        # Helper to find element by testID (content-desc) and tap it
+        tap_testid() {
+            local testid="$1"
+            $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+            $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+            local bounds=$(cat /tmp/ui.xml | tr '>' '\n' | grep "content-desc=\"$testid\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+            if [ -n "$bounds" ]; then
+                read x1 y1 x2 y2 <<< "$bounds"
+                local cx=$(( (x1 + x2) / 2 ))
+                local cy=$(( (y1 + y2) / 2 ))
+                $ADB shell input tap "$cx" "$cy"
+                return 0
+            fi
+            return 1
+        }
+
+        # Tap Restaurant ID field (by accessibilityLabel)
+        if tap_testid "login-restaurant-id"; then
+            sleep 0.5
+            $ADB shell input text "$RESTAURANT_ID"
+            sleep 0.5
+            # Dismiss keyboard before tapping next field
+            $ADB shell input keyevent 4
+            sleep 0.5
+        else
+            echo "Restaurant ID field not found (accessibilityLabel: login-restaurant-id)"
+            exit 1
+        fi
+
+        # Tap Password field (by accessibilityLabel)
+        if tap_testid "login-password"; then
+            sleep 0.5
+            $ADB shell input text "$PASSWORD"
+            sleep 0.5
+            # Dismiss keyboard
+            $ADB shell input keyevent 4
+            sleep 0.5
+        else
+            echo "Password field not found (accessibilityLabel: login-password)"
+            exit 1
+        fi
+
+        # Tap Login button (by testID)
+        if tap_testid "login-button"; then
+            echo "Login button tapped. Waiting for app to load..."
+            sleep 5
+            echo "Login complete. Use 'emu.sh shot' to verify."
+        else
+            echo "Login button not found (accessibilityLabel: login-button)"
+            exit 1
+        fi
+
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        ;;
+
+    tap-id)
+        # Tap on any UI element by its accessibilityLabel (content-desc)
+        # Note: For React Native Paper components, use accessibilityLabel prop, not testID
+        if [ -z "$2" ]; then
+            echo "Usage: emu.sh tap-id <accessibilityLabel>"
+            echo "Example: emu.sh tap-id 'login-button'"
+            exit 1
+        fi
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        TID_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep "content-desc=\"$2\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        if [ -n "$TID_BOUNDS" ]; then
+            read x1 y1 x2 y2 <<< "$TID_BOUNDS"
+            cx=$(( (x1 + x2) / 2 ))
+            cy=$(( (y1 + y2) / 2 ))
+            echo "Tapping testID='$2' at $cx, $cy"
+            $ADB shell input tap "$cx" "$cy"
+        else
+            echo "Element with testID='$2' not found. Try 'emu.sh dump-all' to see available elements."
+            exit 1
         fi
         ;;
 
@@ -447,6 +621,149 @@ case "$1" in
         else
             echo "Element with text '$2' not found. Try 'emu.sh dump' to see available elements."
         fi
+        ;;
+
+    tap-text-nth)
+        # Tap the nth element matching a text pattern
+        # Usage: emu.sh tap-text-nth <text> <index>
+        # Examples:
+        #   emu.sh tap-text-nth "Add Answer" 0   # Tap 1st "Add Answer"
+        #   emu.sh tap-text-nth "Add Answer" 1   # Tap 2nd "Add Answer"
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo "Usage: emu.sh tap-text-nth <text> <index>"
+            echo "  index: 0-based index of which matching element to tap"
+            echo ""
+            echo "Examples:"
+            echo "  emu.sh tap-text-nth 'Add Answer' 0   # Tap 1st 'Add Answer'"
+            echo "  emu.sh tap-text-nth 'Add Answer' 1   # Tap 2nd 'Add Answer'"
+            exit 1
+        fi
+        TEXT_PATTERN="$2"
+        TEXT_INDEX="$3"
+
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        echo "UI hierchary dumped to: /sdcard/ui.xml"
+
+        # Find all matching elements and extract bounds
+        MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep "text=\"$TEXT_PATTERN\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+
+        NUM_MATCHES=$(echo "$MATCHES" | grep -c .)
+        if [ "$NUM_MATCHES" -eq 0 ] || [ -z "$MATCHES" ]; then
+            echo "No elements found with text='$TEXT_PATTERN'"
+            rm -f /tmp/ui.xml
+            $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+            exit 1
+        fi
+
+        echo "Found $NUM_MATCHES elements with text='$TEXT_PATTERN'"
+
+        # Get the nth match (0-indexed)
+        SELECTED=$(echo "$MATCHES" | sed -n "$((TEXT_INDEX + 1))p")
+
+        if [ -z "$SELECTED" ]; then
+            echo "Index $TEXT_INDEX out of range. Found $NUM_MATCHES elements (indices 0-$((NUM_MATCHES - 1)))"
+            rm -f /tmp/ui.xml
+            $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+            exit 1
+        fi
+
+        read x1 y1 x2 y2 <<< "$SELECTED"
+        cx=$(( (x1 + x2) / 2 ))
+        cy=$(( (y1 + y2) / 2 ))
+        echo "Tapping #$TEXT_INDEX at $cx, $cy"
+        $ADB shell input tap "$cx" "$cy"
+
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        ;;
+
+    tap-nth)
+        # Tap the nth element matching a content-desc or class pattern
+        # Usage: emu.sh tap-nth <type> <pattern> <index>
+        #   type: "desc" for content-desc, "class" for class name, "icon" for content-desc icons
+        # Examples:
+        #   emu.sh tap-nth icon Edit 0      # Tap 0th icon with content-desc containing "Edit"
+        #   emu.sh tap-nth desc pencil 1    # Tap 1st element with content-desc containing "pencil"
+        #   emu.sh tap-nth class ImageView 2 # Tap 2nd element of class ImageView
+        if [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]; then
+            echo "Usage: emu.sh tap-nth <type> <pattern> <index>"
+            echo "  type: desc (content-desc), class (class name), icon (same as desc)"
+            echo ""
+            echo "Examples:"
+            echo "  emu.sh tap-nth icon Edit 0       # Tap 0th icon with Edit in content-desc"
+            echo "  emu.sh tap-nth desc pencil 1     # Tap 1st element with pencil in content-desc"
+            echo "  emu.sh tap-nth class ImageView 2 # Tap 2nd ImageView"
+            exit 1
+        fi
+        TYPE="$2"
+        PATTERN="$3"
+        INDEX="$4"
+
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+
+        case "$TYPE" in
+            desc|icon)
+                # Find elements with content-desc containing pattern (case-insensitive)
+                MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "content-desc=\"[^\"]*${PATTERN}[^\"]*\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1,\2,\3,\4/')
+                ;;
+            class)
+                # Find elements with class containing pattern
+                MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "class=\"[^\"]*${PATTERN}[^\"]*\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1,\2,\3,\4/')
+                ;;
+            *)
+                echo "Unknown type: $TYPE. Use desc, icon, or class."
+                rm -f /tmp/ui.xml
+                $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+                exit 1
+                ;;
+        esac
+
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+
+        # Count matches
+        MATCH_COUNT=$(echo "$MATCHES" | grep -c . 2>/dev/null || echo 0)
+
+        if [ "$MATCH_COUNT" -eq 0 ]; then
+            echo "No elements found matching $TYPE='$PATTERN'"
+            echo "Try 'emu.sh dump-all' to see all elements with their attributes."
+            exit 1
+        fi
+
+        # Get the nth match (0-indexed)
+        SELECTED=$(echo "$MATCHES" | sed -n "$((INDEX + 1))p")
+
+        if [ -z "$SELECTED" ]; then
+            echo "Index $INDEX out of range. Found $MATCH_COUNT elements matching $TYPE='$PATTERN'"
+            exit 1
+        fi
+
+        # Parse bounds and tap center
+        x1=$(echo "$SELECTED" | cut -d, -f1)
+        y1=$(echo "$SELECTED" | cut -d, -f2)
+        x2=$(echo "$SELECTED" | cut -d, -f3)
+        y2=$(echo "$SELECTED" | cut -d, -f4)
+        cx=$(( (x1 + x2) / 2 ))
+        cy=$(( (y1 + y2) / 2 ))
+
+        echo "Found $MATCH_COUNT elements matching $TYPE='$PATTERN'"
+        echo "Tapping #$INDEX at $cx, $cy"
+        $ADB shell input tap "$cx" "$cy"
+        ;;
+
+    dump-all)
+        # Dump UI hierarchy with full element details
+        $ADB shell uiautomator dump /sdcard/ui.xml
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        echo "All elements with content-desc or text:"
+        cat /tmp/ui.xml | tr '>' '\n' | grep -E '(content-desc="[^"]+"|text="[^"]+")' | \
+            sed 's/.*class="\([^"]*\)".*content-desc="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 desc="\2" bounds=\3/' | \
+            sed 's/.*class="\([^"]*\)".*text="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 text="\2" bounds=\3/' | \
+            grep -v "^  $" | head -50
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         ;;
 
     select-all)
@@ -483,6 +800,56 @@ case "$1" in
         echo "Pressed Back"
         ;;
 
+    eiu|run-eiu)
+        # Don't run this automatically - it takes 2-3 minutes and looks stuck
+        echo "To rebuild with clean state, run in a terminal:"
+        echo ""
+        echo "  /Users/carlos/Code/spark-agent-tools/run-eiu.sh"
+        echo ""
+        echo "This takes ~2-3 minutes (clears caches, starts emulator, builds app)."
+        ;;
+
+    dismiss-logbox|dlb)
+        # Dismiss React Native LogBox yellow warning bar
+        # The X button is at the right side of the warning bar
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
+        # Look for the warning bar text
+        LOGBOX_BOUNDS=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i 'Open debugger to view warnings' | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
+        rm -f /tmp/ui.xml
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        if [ -n "$LOGBOX_BOUNDS" ]; then
+            read x1 y1 x2 y2 <<< "$LOGBOX_BOUNDS"
+            # The X button is at the far right of the bar, vertically centered
+            cx=$(( x2 - 40 ))  # ~40px from right edge
+            cy=$(( (y1 + y2) / 2 ))
+            echo "LogBox found. Tapping X at $cx, $cy"
+            $ADB shell input tap "$cx" "$cy"
+        else
+            echo "No LogBox warning bar found"
+        fi
+        ;;
+
+    clear-db|cdb)
+        # Clear PowerSync database to force fresh sync from server
+        PKG="com.starter.pad"
+        echo "Stopping app..."
+        $ADB shell am force-stop "$PKG" 2>/dev/null || true
+        sleep 1
+        echo "Clearing PowerSync database..."
+        $ADB shell run-as "$PKG" rm -f databases/sparkpos-powersync-v1.db 2>/dev/null || true
+        $ADB shell run-as "$PKG" rm -f databases/sparkpos-powersync-v1.db-shm 2>/dev/null || true
+        $ADB shell run-as "$PKG" rm -f databases/sparkpos-powersync-v1.db-wal 2>/dev/null || true
+        # Verify deletion
+        REMAINING=$($ADB shell run-as "$PKG" ls databases/ 2>/dev/null | grep powersync || true)
+        if [ -z "$REMAINING" ]; then
+            echo "PowerSync database cleared successfully"
+        else
+            echo "Warning: Some files may remain: $REMAINING"
+        fi
+        echo "Restart the app to sync fresh data from server"
+        ;;
+
     map)
         # Show all mapped elements
         if [ ! -f "$UI_MAP" ]; then
@@ -497,6 +864,46 @@ case "$1" in
         fi
         ;;
 
+    scroll-down)
+        # Scroll down at optional x,y coordinates (default: screen center)
+        CX="${2:-1280}"
+        CY="${3:-800}"
+        START_Y=$((CY + 200))
+        END_Y=$((CY - 200))
+        echo "Scrolling down at ($CX, $CY)"
+        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" 300
+        ;;
+
+    scroll-up)
+        # Scroll up at optional x,y coordinates (default: screen center)
+        CX="${2:-1280}"
+        CY="${3:-800}"
+        START_Y=$((CY - 200))
+        END_Y=$((CY + 200))
+        echo "Scrolling up at ($CX, $CY)"
+        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" 300
+        ;;
+
+    scroll-left)
+        # Scroll left at optional x,y coordinates (default: screen center)
+        CX="${2:-1280}"
+        CY="${3:-800}"
+        START_X=$((CX + 200))
+        END_X=$((CX - 200))
+        echo "Scrolling left at ($CX, $CY)"
+        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" 300
+        ;;
+
+    scroll-right)
+        # Scroll right at optional x,y coordinates (default: screen center)
+        CX="${2:-1280}"
+        CY="${3:-800}"
+        START_X=$((CX - 200))
+        END_X=$((CX + 200))
+        echo "Scrolling right at ($CX, $CY)"
+        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" 300
+        ;;
+
     *)
         echo "Android Emulator Control Script"
         echo ""
@@ -506,7 +913,9 @@ case "$1" in
         echo "  shot                    - Take screenshot (/tmp/screen.png)"
         echo "  wait-shot [tries] [delay] - Screenshot with retry (default 3 tries, 5s delay)"
         echo "  tap <x> <y>             - Tap at coordinates"
+        echo "  tap-id <testID>         - Tap element by testID (content-desc)"
         echo "  tap-element <s>.<e>     - Tap element by name from UI map"
+        echo "  tap-nth <type> <pat> <n> - Tap nth element by desc/class (e.g., 'icon Edit 0')"
         echo "  swipe <x1> <y1> <x2> <y2> - Swipe gesture"
         echo "  text <string>           - Type text"
         echo "  key <keycode>           - Press key (back/home/enter/del)"
@@ -515,6 +924,7 @@ case "$1" in
         echo "  wait                    - Wait for emulator"
         echo "  device                  - Show current device"
         echo "  dump                    - Dump UI hierarchy, show clickable elements"
+        echo "  dump-all                - Dump all elements with content-desc/text"
         echo "  lookup <screen>.<elem>  - Get coordinates from UI map"
         echo "  map                     - Show all mapped elements"
         echo "  clean                   - Remove temp files"
@@ -528,11 +938,22 @@ case "$1" in
         echo "  deploy [1|2|3]          - Full deploy + start + wait"
         echo ""
         echo "Navigation:"
+        echo "  nav-menu                - Navigate to Menu home (POS ordering screen)"
         echo "  nav-settings            - Open Settings (needs FORCE_SETTINGS_UNLOCKED)"
         echo "  nav-card-reader         - Navigate to Card Reader settings"
         echo "  nav-menu-settings       - Navigate to Menu Settings page"
         echo "  nav-menu-editor         - Navigate to Menu Editor (full path)"
+        echo "  login [id] [pw]         - Login (default: 23/password)"
         echo "  tap-text <text>         - Tap UI element by its text content"
+        echo "  tap-text-nth <text> <n> - Tap nth element with text (0-indexed)"
         echo "  setup-card-reader       - Full card reader setup (Link → Activate → Check Connection)"
+        echo "  dismiss-logbox          - Dismiss React Native yellow warning bar"
+        echo "  clear-db                - Clear PowerSync database (force fresh sync)"
+        echo ""
+        echo "Scrolling:"
+        echo "  scroll-down [x] [y]     - Scroll down at center or specified coordinates"
+        echo "  scroll-up [x] [y]       - Scroll up at center or specified coordinates"
+        echo "  scroll-left [x] [y]     - Scroll left at center or specified coordinates"
+        echo "  scroll-right [x] [y]    - Scroll right at center or specified coordinates"
         ;;
 esac

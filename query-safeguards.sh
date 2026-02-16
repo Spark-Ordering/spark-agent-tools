@@ -2,7 +2,7 @@
 
 # query-safeguards.sh - Shared validation logic for database query scripts
 # Prevents DELETE statements and limits UPDATE to single-row operations
-# Can be bypassed with ALLOW_DELETE=1 environment variable
+# DELETE is ALWAYS blocked - no bypass option (use Supabase dashboard for deletes)
 
 # Check if query is a DELETE statement (case-insensitive)
 is_delete_query() {
@@ -68,28 +68,16 @@ run_mysql_count() {
 # Usage:
 #   validate_query "SQL" "postgres" "$DATABASE_URL"
 #   validate_query "SQL" "mysql" "$HOST" "$USER" "$PASS" "$DBNAME"
-#
-# Set ALLOW_DELETE=1 to bypass DELETE protection (for explicit delete operations)
 validate_query() {
     local query="$1"
     local db_type="$2"
     shift 2
 
-    # Block DELETE statements unless explicitly allowed
+    # Block DELETE statements - always
     if is_delete_query "$query"; then
-        if [ "$ALLOW_DELETE" = "1" ]; then
-            # Extract table and WHERE for safety message
-            local where_clause=$(extract_where_clause "$query")
-            if [ -z "$where_clause" ]; then
-                echo "Error: DELETE without WHERE clause is not allowed." >&2
-                exit 1
-            fi
-            echo "# Warning: Executing DELETE statement" >&2
-        else
-            echo "Error: DELETE statements are blocked for safety." >&2
-            echo "Use --delete flag to explicitly allow DELETE operations." >&2
-            exit 1
-        fi
+        echo "Error: DELETE statements are blocked for safety." >&2
+        echo "Use Supabase dashboard or direct psql for delete operations." >&2
+        exit 1
     fi
 
     # Check UPDATE statements
