@@ -26,6 +26,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UI_MAP="$SCRIPT_DIR/sparkpos-ui-map.json"
 
+# Default package - use dev variant since that's what we run 99% of the time
+DEFAULT_PKG="com.starter.paddev"
+
 # Find the emulator device (prefer emulator over physical device)
 get_device() {
     local devices=$(adb devices | grep -v "List of devices" | grep -v "^$")
@@ -117,9 +120,11 @@ case "$1" in
             echo "Usage: emu.sh replace-text <string>"
             exit 1
         fi
-        # Clear field first
-        $ADB shell input keyevent KEYCODE_MOVE_END
-        for i in {1..50}; do $ADB shell input keyevent KEYCODE_DEL; done
+        # Select all text (Ctrl+A) then delete, then type new text
+        $ADB shell input keyevent KEYCODE_CTRL_A
+        sleep 0.1
+        $ADB shell input keyevent KEYCODE_DEL
+        sleep 0.1
         # Type new text
         escaped=$(echo "$2" | sed 's/ /%s/g')
         $ADB shell input text "$escaped"
@@ -181,7 +186,7 @@ case "$1" in
 
     start|launch)
         # Start SparkPos app and wait for it to load
-        PKG="${2:-com.starter.pad}"
+        PKG="${2:-$DEFAULT_PKG}"
         ACT="com.starter.pad.MainActivity"
         echo "Starting $PKG..."
         $ADB shell am force-stop "$PKG" 2>/dev/null
@@ -207,13 +212,13 @@ case "$1" in
         ;;
 
     stop|kill)
-        PKG="${2:-com.starter.pad}"
+        PKG="${2:-$DEFAULT_PKG}"
         $ADB shell am force-stop "$PKG"
         echo "Stopped $PKG"
         ;;
 
     restart)
-        PKG="${2:-com.starter.pad}"
+        PKG="${2:-$DEFAULT_PKG}"
         "$0" stop "$PKG"
         sleep 2
         "$0" start "$PKG"
@@ -221,7 +226,7 @@ case "$1" in
 
     alive|running)
         # Check if app is running (exit 0 = yes, exit 1 = no)
-        PKG="${2:-com.starter.pad}"
+        PKG="${2:-$DEFAULT_PKG}"
         PID=$($ADB shell pidof "$PKG" 2>/dev/null | tr -d '\r')
         if [ -n "$PID" ]; then
             echo "Running (PID: $PID)"
@@ -240,6 +245,23 @@ case "$1" in
             echo "Metro: NOT running"
             exit 1
         fi
+        ;;
+
+    kill-metro)
+        # Kill Metro bundler process
+        METRO_PID=$(lsof -ti :8081 2>/dev/null | head -1)
+        if [ -n "$METRO_PID" ]; then
+            kill $METRO_PID
+            echo "Killed Metro (PID $METRO_PID)"
+        else
+            echo "Metro not running"
+        fi
+        ;;
+
+    watchman-clear)
+        # Clear watchman cache to force file re-indexing
+        watchman watch-del-all 2>/dev/null
+        echo "Watchman cache cleared"
         ;;
 
     deploy)
@@ -703,20 +725,22 @@ case "$1" in
         ;;
 
     tap-nth)
-        # Tap the nth element matching a content-desc or class pattern
+        # Tap the nth element matching a content-desc, text, or class pattern
         # Usage: emu.sh tap-nth <type> <pattern> <index>
-        #   type: "desc" for content-desc, "class" for class name, "icon" for content-desc icons
+        #   type: "desc" for content-desc, "text" for visible text, "class" for class name, "icon" for content-desc icons
         # Examples:
         #   emu.sh tap-nth icon Edit 0      # Tap 0th icon with content-desc containing "Edit"
         #   emu.sh tap-nth desc pencil 1    # Tap 1st element with content-desc containing "pencil"
+        #   emu.sh tap-nth text "Add Item" 0 # Tap 0th element with text containing "Add Item"
         #   emu.sh tap-nth class ImageView 2 # Tap 2nd element of class ImageView
         if [ -z "$2" ] || [ -z "$3" ] || [ -z "$4" ]; then
             echo "Usage: emu.sh tap-nth <type> <pattern> <index>"
-            echo "  type: desc (content-desc), class (class name), icon (same as desc)"
+            echo "  type: desc (content-desc), text (visible text), class (class name), icon (same as desc)"
             echo ""
             echo "Examples:"
             echo "  emu.sh tap-nth icon Edit 0       # Tap 0th icon with Edit in content-desc"
             echo "  emu.sh tap-nth desc pencil 1     # Tap 1st element with pencil in content-desc"
+            echo "  emu.sh tap-nth text 'Add Item' 0 # Tap 0th element with 'Add Item' in text"
             echo "  emu.sh tap-nth class ImageView 2 # Tap 2nd ImageView"
             exit 1
         fi
@@ -732,12 +756,16 @@ case "$1" in
                 # Find elements with content-desc containing pattern (case-insensitive)
                 MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "content-desc=\"[^\"]*${PATTERN}[^\"]*\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1,\2,\3,\4/')
                 ;;
+            text)
+                # Find elements with text containing pattern (case-insensitive)
+                MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "text=\"[^\"]*${PATTERN}[^\"]*\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1,\2,\3,\4/')
+                ;;
             class)
                 # Find elements with class containing pattern
                 MATCHES=$(cat /tmp/ui.xml | tr '>' '\n' | grep -i "class=\"[^\"]*${PATTERN}[^\"]*\"" | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1,\2,\3,\4/')
                 ;;
             *)
-                echo "Unknown type: $TYPE. Use desc, icon, or class."
+                echo "Unknown type: $TYPE. Use desc, icon, text, or class."
                 rm -f /tmp/ui.xml
                 $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
                 exit 1
@@ -876,7 +904,7 @@ case "$1" in
 
     clear-db|cdb)
         # Clear PowerSync database to force fresh sync from server
-        PKG="com.starter.pad"
+        PKG="$DEFAULT_PKG"
         echo "Stopping app..."
         $ADB shell am force-stop "$PKG" 2>/dev/null || true
         sleep 1
@@ -959,7 +987,7 @@ case "$1" in
         echo "  tap <x> <y>             - Tap at coordinates"
         echo "  tap-id <testID>         - Tap element by testID (content-desc)"
         echo "  tap-element <s>.<e>     - Tap element by name from UI map"
-        echo "  tap-nth <type> <pat> <n> - Tap nth element by desc/class (e.g., 'icon Edit 0')"
+        echo "  tap-nth <type> <pat> <n> - Tap nth element by desc/text/class (e.g., 'text Crab 0')"
         echo "  swipe <x1> <y1> <x2> <y2> - Swipe gesture"
         echo "  text <string>           - Type text"
         echo "  key <keycode>           - Press key (back/home/enter/del)"
@@ -979,6 +1007,8 @@ case "$1" in
         echo "  restart [pkg]           - Stop + start"
         echo "  alive [pkg]             - Check if app is running"
         echo "  metro-status            - Check if Metro bundler is alive"
+        echo "  kill-metro              - Kill Metro bundler process"
+        echo "  watchman-clear          - Clear watchman cache for file re-indexing"
         echo "  deploy [1|2|3]          - Full deploy + start + wait"
         echo ""
         echo "Navigation:"

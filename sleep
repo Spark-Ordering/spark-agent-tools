@@ -1,12 +1,41 @@
 #!/bin/bash
-# Wrapper for sleep that caps at 60 seconds
-# Prevents Claude from waiting excessively long
+# Wrapper for sleep that:
+# 1. Caps at 45 seconds
+# 2. Rate limits to once per 75 seconds (only for direct Claude calls)
 
-MAX_SECONDS=60
+MAX_SECONDS=45
+RATE_LIMIT_SECONDS=75
+LAST_SLEEP_FILE="/tmp/.claude-sleep-timestamp"
 
 if [[ $# -eq 0 ]]; then
   /bin/sleep
   exit $?
+fi
+
+# Check if this is a direct call (not from within another script)
+# SHLVL=2 means direct call from Claude's bash, higher means nested in a script
+is_direct_call=false
+if [[ ${SHLVL:-1} -le 2 ]]; then
+  # Also check parent process - if it's emu.sh or similar, skip rate limit
+  parent_cmd=$(ps -o comm= -p $PPID 2>/dev/null)
+  if [[ "$parent_cmd" == "bash" || "$parent_cmd" == "zsh" ]]; then
+    is_direct_call=true
+  fi
+fi
+
+# Only rate limit direct calls
+if [[ "$is_direct_call" == "true" ]]; then
+  if [[ -f "$LAST_SLEEP_FILE" ]]; then
+    last_sleep=$(cat "$LAST_SLEEP_FILE")
+    now=$(date +%s)
+    elapsed=$((now - last_sleep))
+
+    if [[ $elapsed -lt $RATE_LIMIT_SECONDS ]]; then
+      remaining=$((RATE_LIMIT_SECONDS - elapsed))
+      echo "sleep: rate limited - wait ${remaining}s before sleeping again" >&2
+      exit 1
+    fi
+  fi
 fi
 
 # Parse the sleep argument (handles formats like 60, 60s, 1m, etc.)
@@ -29,8 +58,16 @@ if [[ "$arg" =~ ^([0-9]+)([smhd]?)$ ]]; then
     seconds=$MAX_SECONDS
   fi
 
+  # Record this sleep only for direct calls
+  if [[ "$is_direct_call" == "true" ]]; then
+    date +%s > "$LAST_SLEEP_FILE"
+  fi
+
   /bin/sleep "$seconds"
 else
   # Fallback for complex formats
+  if [[ "$is_direct_call" == "true" ]]; then
+    date +%s > "$LAST_SLEEP_FILE"
+  fi
   /bin/sleep "$@"
 fi

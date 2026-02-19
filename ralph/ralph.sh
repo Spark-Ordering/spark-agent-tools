@@ -62,8 +62,11 @@ if [[ "$PLAN_MODE" == true ]]; then
 2. Find the NEXT unchecked task (marked with `- [ ]`)
 3. Complete it fully, including any verification steps (like POS checks)
 4. Update the plan file to mark it done (change `- [ ]` to `- [x]`)
-5. Move to the next task immediately - NO stopping for confirmation
-6. Repeat until ALL tasks are checked
+5. **BEFORE moving to the next task**: Check if you saw any error (snackbar, log box, console error, etc.)
+   - If YES: Add a bug fix task to the plan and address it NOW before other tasks
+   - Do NOT proceed to unrelated tasks while a visible error exists from your recent work
+6. Move to the next task immediately - NO stopping for confirmation
+7. Repeat until ALL tasks are checked
 
 ## Completion Signal
 When ALL tasks in the plan are complete (no more `- [ ]` remaining), output exactly:

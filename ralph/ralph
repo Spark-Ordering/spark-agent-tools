@@ -1,0 +1,237 @@
+#!/bin/bash
+# ralph - Main entry point for Ralph Wiggum autonomous mode
+#
+# Usage:
+#   ralph              # Show status
+#   ralph on           # Enable (auto-detects team mode)
+#   ralph on PLAN.md   # Enable with specific plan
+#   ralph off          # Disable
+#
+# Team Mode (automatic):
+#   If a team exists, Ralph auto-detects your agent name from the team config.
+#   Plan sections marked with <!-- agent: NAME --> are filtered per-agent.
+#   No extra arguments needed - just `ralph on` like normal.
+
+RALPH_FLAG="$HOME/.claude/.ralph-mode"
+TEAMS_DIR="$HOME/.claude/teams"
+
+# Auto-detect agent name based on hostname
+detect_agent_name() {
+    local host=$(hostname)
+
+    case "$host" in
+        MacBook-Air*)
+            echo "dev1"
+            ;;
+        *MacBook-Pro*)
+            echo "dev2"
+            ;;
+        *)
+            # Unknown host - fall back to "all" (no team filtering)
+            echo "all"
+            ;;
+    esac
+}
+
+# Count tasks for agent using external script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+count_tasks() {
+    local agent="$1"
+    local plan_file="$2"
+    "$SCRIPT_DIR/ralph-count.sh" "$agent" "$plan_file"
+}
+
+# Get plan file from flag or find latest
+get_plan_file() {
+    local from_flag=""
+
+    if [[ -f "$RALPH_FLAG" ]] && [[ -s "$RALPH_FLAG" ]]; then
+        from_flag=$(cat "$RALPH_FLAG")
+        # If flag contains agent:path format, extract path
+        if [[ "$from_flag" == *":"* ]]; then
+            from_flag="${from_flag#*:}"
+        fi
+        # If it's a valid file, use it
+        if [[ -f "$from_flag" ]]; then
+            echo "$from_flag"
+            return
+        fi
+    fi
+
+    # Default: most recent plan
+    ls -t "$HOME/.claude/plans/"*.md 2>/dev/null | head -1
+}
+
+# Get agent from flag (if set) or auto-detect
+get_agent() {
+    if [[ -f "$RALPH_FLAG" ]] && [[ -s "$RALPH_FLAG" ]]; then
+        local content=$(cat "$RALPH_FLAG")
+        if [[ "$content" == *":"* ]]; then
+            # Format: agent:path
+            echo "${content%%:*}"
+            return
+        elif [[ "$content" != /* ]]; then
+            # Just agent name (not a path)
+            echo "$content"
+            return
+        fi
+    fi
+    detect_agent_name
+}
+
+show_status() {
+    if [[ ! -f "$RALPH_FLAG" ]]; then
+        echo "⏹️  Ralph mode: OFF"
+        return
+    fi
+
+    local agent=$(get_agent)
+    local plan_file=$(get_plan_file)
+
+    echo "🔄 Ralph mode: ON"
+
+    if [[ -n "$plan_file" ]] && [[ -f "$plan_file" ]]; then
+        echo "   Plan: $(basename "$plan_file")"
+
+        read checked unchecked <<< "$(count_tasks "$agent" "$plan_file" | tr '\n' ' ')"
+
+        if [[ "$agent" != "all" ]]; then
+            echo "   Tasks: $checked done, $unchecked remaining (agent: $agent)"
+
+            # Show current branch for team mode
+            current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+            if [[ -n "$current_branch" ]]; then
+                echo "   Branch: $current_branch"
+            fi
+
+            # Check for coordination messages
+            if [[ -f "$HOME/.claude/coordination/messages.txt" ]]; then
+                msg_count=$(wc -l < "$HOME/.claude/coordination/messages.txt" | tr -d ' ')
+                if [[ "$msg_count" -gt 0 ]]; then
+                    echo "   📬 $msg_count coordination message(s) pending"
+                fi
+            fi
+
+            # Check for active conflict
+            if [[ -f "$HOME/.claude/coordination/conflict.json" ]]; then
+                echo "   ⚠️  Active conflict - needs resolution"
+            fi
+        else
+            echo "   Tasks: $checked done, $unchecked remaining"
+        fi
+    else
+        echo "   No plan file found"
+    fi
+}
+
+case "${1:-status}" in
+    on)
+        plan_file=""
+        agent=""
+
+        # Check if arg is a file path
+        if [[ -n "$2" ]] && [[ -f "$2" ]]; then
+            plan_file="$2"
+        elif [[ -n "$2" ]]; then
+            # Might be agent name for team mode (Claude can use this)
+            agent="$2"
+            if [[ -n "$3" ]] && [[ -f "$3" ]]; then
+                plan_file="$3"
+            fi
+        fi
+
+        # Auto-detect agent from hostname if not specified
+        if [[ -z "$agent" ]]; then
+            agent=$(detect_agent_name)
+        fi
+
+        # Build flag content
+        if [[ -n "$agent" ]] && [[ "$agent" != "all" ]] && [[ -n "$plan_file" ]]; then
+            echo "$agent:$plan_file" > "$RALPH_FLAG"
+        elif [[ -n "$agent" ]] && [[ "$agent" != "all" ]]; then
+            echo "$agent" > "$RALPH_FLAG"
+        elif [[ -n "$plan_file" ]]; then
+            echo "$plan_file" > "$RALPH_FLAG"
+        else
+            touch "$RALPH_FLAG"
+        fi
+
+        # If agent detected/specified, run team setup (creates branch, splits tasks)
+        if [[ -n "$agent" ]] && [[ "$agent" != "all" ]]; then
+            plan_file=$(get_plan_file)
+            "$SCRIPT_DIR/ralph-team-setup.sh" "$agent" "$plan_file" 2>/dev/null
+        fi
+
+        # Show status
+        agent=$(get_agent)
+        plan_file=$(get_plan_file)
+
+        echo "🔄 Ralph mode ON"
+        if [[ -n "$plan_file" ]] && [[ -f "$plan_file" ]]; then
+            echo "   Plan: $(basename "$plan_file")"
+            read checked unchecked <<< "$(count_tasks "$agent" "$plan_file" | tr '\n' ' ')"
+            echo "   Tasks remaining: $unchecked"
+
+            if [[ "$agent" != "all" ]]; then
+                current_branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+                echo "   Branch: $current_branch"
+            fi
+        fi
+        ;;
+
+    sync)
+        # Convenience: ralph sync = ralph-sync.sh with current agent
+        agent=$(get_agent)
+        if [[ "$agent" == "all" ]]; then
+            echo "ERROR: sync requires team mode (ralph on dev1/dev2)" >&2
+            exit 1
+        fi
+        "$SCRIPT_DIR/ralph-sync.sh" "$agent" "${2:-}"
+        ;;
+
+    check)
+        # Check for conflicts before syncing
+        agent=$(get_agent)
+        if [[ "$agent" == "all" ]]; then
+            echo "ERROR: check requires team mode (ralph on dev1/dev2)" >&2
+            exit 1
+        fi
+        "$SCRIPT_DIR/ralph-sync.sh" "$agent" "--check"
+        ;;
+
+    coord|coordinate)
+        # Coordination messages
+        shift
+        "$SCRIPT_DIR/ralph-coordinate.sh" "$@"
+        ;;
+    off|disable|stop)
+        rm -f "$RALPH_FLAG"
+        echo "⏹️  Ralph mode OFF"
+        ;;
+    status|"")
+        show_status
+        ;;
+    help|--help|-h)
+        echo "Usage: ralph [command] [args]"
+        echo ""
+        echo "Basic commands:"
+        echo "  ralph              Show current status"
+        echo "  ralph on           Enable autonomous mode"
+        echo "  ralph on FILE      Enable with specific plan file"
+        echo "  ralph off          Disable autonomous mode"
+        echo ""
+        echo "Team commands:"
+        echo "  ralph on dev1      Enable as dev1 (creates branch, splits tasks)"
+        echo "  ralph on dev2      Enable as dev2 (creates branch, splits tasks)"
+        echo "  ralph sync         Sync changes from other agent's branch"
+        echo "  ralph check        Check for conflicts before syncing (dry-run)"
+        echo "  ralph coord        Check coordination messages"
+        echo "  ralph coord send <agent> \"msg\"  Send message to teammate"
+        exit 0
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run 'ralph help' for usage"
+        exit 1
+        ;;
+esac

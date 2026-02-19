@@ -12,7 +12,7 @@
 #   sqlite-query.sh --write "DELETE FROM ps_data__draft_menu_versions"
 #   sqlite-query.sh --fresh "SELECT COUNT(*) FROM draft_menu_versions"
 
-PACKAGE="com.starter.pad"
+PACKAGE="com.starter.paddev"
 DB_PATH="/data/data/$PACKAGE/databases/sparkpos-powersync-v1.db"
 TMP_DB="/tmp/sparkpos-device.db"
 
