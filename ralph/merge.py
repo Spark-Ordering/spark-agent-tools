@@ -12,6 +12,7 @@ Each agent writes ONLY to their own state file.
 Reading merges both files to get combined view.
 """
 
+import io
 import json
 import os
 import sys
@@ -78,7 +79,41 @@ def empty_state() -> dict:
     }
 
 def load_agent_state(agent: str) -> dict:
+    """Load agent state - use SSH for remote agent to get real-time state."""
+    my_agent = get_agent()
     state_file = get_state_file(agent)
+
+    # If reading OUR OWN state, read locally
+    if agent == my_agent:
+        if not state_file.exists():
+            return empty_state()
+        try:
+            with open(state_file) as f:
+                return json.load(f)
+        except:
+            return empty_state()
+
+    # Reading OTHER agent's state - SSH for real-time (avoids sync lag)
+    # dev1 = MacBook Air at 192.168.1.148, dev2 = MacBook Pro at 192.168.1.104
+    if my_agent == "dev1" and agent == "dev2":
+        other_host = "carlos@192.168.1.104"
+    elif my_agent == "dev2" and agent == "dev1":
+        other_host = "carlos@192.168.1.148"
+    else:
+        other_host = None
+
+    if other_host:
+        try:
+            result = subprocess.run(
+                ["ssh", "-o", "ConnectTimeout=3", other_host, f"cat {state_file} 2>/dev/null"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return json.load(io.StringIO(result.stdout))
+        except:
+            pass  # Fall through to local file
+
+    # Fallback: read synced local copy
     if not state_file.exists():
         return empty_state()
     try:
@@ -680,7 +715,16 @@ def cmd_next_action() -> dict:
         "message": ""
     }
 
-    # TURN CHECK - if not your turn, WAIT
+    # GLOBAL TURN CHECK - dev1 ALWAYS goes first in idle/started phases
+    if phase in ("idle", "started") and agent == "dev2":
+        # Dev2 must wait for dev1 to finish start+check
+        dev1_state = load_agent_state("dev1")
+        if dev1_state.get("phase", "idle") not in ("review", "clean", "merged"):
+            result["wait_for"] = "dev1"
+            result["message"] = "Waiting for dev1 to start merge first"
+            return result
+
+    # TURN CHECK for review phase
     if phase == "review" and whose_turn != agent:
         result["wait_for"] = whose_turn
         result["message"] = f"Not your turn. Waiting for {whose_turn}"
