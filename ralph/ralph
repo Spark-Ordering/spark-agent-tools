@@ -14,27 +14,21 @@
 
 RALPH_FLAG="$HOME/.claude/.ralph-mode"
 TEAMS_DIR="$HOME/.claude/teams"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Auto-detect agent name based on hostname
+# Get agent from shared source
+source "$SCRIPT_DIR/ralph-agent.sh"
+
+# Wrapper for backward compatibility (returns "all" instead of "unknown" for non-team mode)
 detect_agent_name() {
-    local host=$(hostname)
-
-    case "$host" in
-        MacBook-Air*)
-            echo "dev1"
-            ;;
-        *MacBook-Pro*)
-            echo "dev2"
-            ;;
-        *)
-            # Unknown host - fall back to "all" (no team filtering)
-            echo "all"
-            ;;
-    esac
+    if [[ "$RALPH_AGENT" == "unknown" ]]; then
+        echo "all"
+    else
+        echo "$RALPH_AGENT"
+    fi
 }
 
 # Count tasks for agent using external script
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 count_tasks() {
     local agent="$1"
     local plan_file="$2"
@@ -199,10 +193,20 @@ case "${1:-status}" in
         "$SCRIPT_DIR/ralph-sync.sh" "$agent" "--check"
         ;;
 
-    coord|coordinate)
+    coord|coordinate|messages|msg)
         # Coordination messages
         shift
         "$SCRIPT_DIR/ralph-coordinate.sh" "$@"
+        ;;
+    rebalance|rb)
+        # Redistribute tasks between agents
+        shift
+        "$SCRIPT_DIR/ralph-rebalance.sh" "$@"
+        ;;
+    merge)
+        # Dual-approval merge workflow (Python)
+        shift
+        python3 "$SCRIPT_DIR/merge.py" "$@"
         ;;
     off|disable|stop)
         rm -f "$RALPH_FLAG"
@@ -225,8 +229,19 @@ case "${1:-status}" in
         echo "  ralph on dev2      Enable as dev2 (creates branch, splits tasks)"
         echo "  ralph sync         Sync changes from other agent's branch"
         echo "  ralph check        Check for conflicts before syncing (dry-run)"
-        echo "  ralph coord        Check coordination messages"
-        echo "  ralph coord send <agent> \"msg\"  Send message to teammate"
+        echo "  ralph messages     Check coordination messages (aliases: coord, msg)"
+        echo "  ralph messages send <agent> \"msg\"  Send message to teammate"
+        echo "  ralph rebalance    Redistribute tasks when one agent finishes early"
+        echo "  ralph rebalance --check  Show current task distribution"
+        echo ""
+        echo "Merge commands (end of plan):"
+        echo "  ralph merge start      Commit and push your branch"
+        echo "  ralph merge check      Analyze conflicts between branches"
+        echo "  ralph merge propose    Propose a resolution strategy"
+        echo "  ralph merge vote       Vote approve/reject (BOTH must approve)"
+        echo "  ralph merge execute    Execute merge (requires dual approval)"
+        echo "  ralph merge complete   Clean up and disable ralph"
+        echo "  ralph merge reset      Clear all merge state (clears both machines)"
         exit 0
         ;;
     *)
