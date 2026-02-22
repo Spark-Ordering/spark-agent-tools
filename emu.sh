@@ -63,6 +63,8 @@ case "$1" in
     shot|screenshot|s)
         timeout 15 $ADB exec-out screencap -p > /tmp/screen.png
         if [ $? -eq 0 ]; then
+            # Resize to max 2000px to avoid Claude API "many-image" limit
+            sips --resampleHeightWidthMax 2000 /tmp/screen.png --out /tmp/screen.png >/dev/null 2>&1
             echo "/tmp/screen.png"
         else
             echo "Error: Screenshot timed out (15s). Emulator may be slow or unresponsive."
@@ -262,6 +264,38 @@ case "$1" in
         # Clear watchman cache to force file re-indexing
         watchman watch-del-all 2>/dev/null
         echo "Watchman cache cleared"
+        ;;
+
+    metro-restart|metro-reset)
+        # Kill Metro and restart with cache reset
+        # This forces Metro to re-bundle JavaScript with latest code
+        METRO_PID=$(lsof -ti :8081 2>/dev/null | head -1)
+        if [ -n "$METRO_PID" ]; then
+            kill -9 $METRO_PID 2>/dev/null
+            echo "Killed Metro (PID $METRO_PID)"
+            sleep 2
+        else
+            echo "Metro was not running"
+        fi
+
+        # Start Metro in background with cache reset
+        cd /Users/carlos/Code/SparkPos
+        echo "Starting Metro with cache reset..."
+        npx react-native start --reset-cache &
+        METRO_NEW_PID=$!
+
+        # Wait for Metro to be ready (up to 30 seconds)
+        for i in {1..30}; do
+            sleep 1
+            STATUS=$(curl -s --connect-timeout 2 http://localhost:8081/status 2>/dev/null)
+            if [ "$STATUS" = "packager-status:running" ]; then
+                echo "Metro started (PID $METRO_NEW_PID)"
+                exit 0
+            fi
+            echo -n "."
+        done
+        echo ""
+        echo "Warning: Metro may still be starting..."
         ;;
 
     deploy)
@@ -1008,6 +1042,7 @@ case "$1" in
         echo "  alive [pkg]             - Check if app is running"
         echo "  metro-status            - Check if Metro bundler is alive"
         echo "  kill-metro              - Kill Metro bundler process"
+        echo "  metro-restart           - Kill Metro and restart with cache reset"
         echo "  watchman-clear          - Clear watchman cache for file re-indexing"
         echo "  deploy [1|2|3]          - Full deploy + start + wait"
         echo ""

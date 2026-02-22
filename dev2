@@ -1,0 +1,21 @@
+#!/bin/bash
+# dev2 - Run commands on dev2 (MacBook Pro) via SSH
+# Usage: dev2 "command"
+# Usage: dev2 -d /path "command"  (cd to directory first)
+
+DEV2_HOST="carlos@192.168.1.104"
+
+if [[ "$1" == "-d" ]]; then
+    DIR="$2"
+    shift 2
+    CMD="cd $DIR && $*"
+else
+    CMD="$*"
+fi
+
+if [[ -z "$CMD" ]]; then
+    # No command = interactive shell
+    ssh "$DEV2_HOST"
+else
+    ssh "$DEV2_HOST" "$CMD"
+fi

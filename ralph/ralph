@@ -212,6 +212,9 @@ case "${1:-status}" in
         ;;
     merge)
         # Dual-approval merge workflow (Python)
+        # Subcommands: start, check, show, discuss, propose, vote
+        #              apply, show-resolution, resolved, finalize, execute
+        #              status, reset, complete, wait, next-action
         shift
         python3 "$SCRIPT_DIR/merge.py" "$@"
         ;;
@@ -241,14 +244,20 @@ case "${1:-status}" in
         echo "  ralph rebalance    Redistribute tasks when one agent finishes early"
         echo "  ralph rebalance --check  Show current task distribution"
         echo ""
-        echo "Merge commands (end of plan):"
-        echo "  ralph merge start      Commit and push your branch"
-        echo "  ralph merge check      Analyze conflicts between branches"
-        echo "  ralph merge propose    Propose a resolution strategy"
-        echo "  ralph merge vote       Vote approve/reject (BOTH must approve)"
-        echo "  ralph merge execute    Execute merge (requires dual approval)"
+        echo "Merge commands:"
+        echo "  ralph merge start      Initialize hunk-by-hunk merge"
+        echo "  ralph merge show       Show hunk + proposals + discussion"
+        echo "  ralph merge propose    Suggest a resolution"
+        echo "  ralph merge comment    Add to the discussion"
+        echo "  ralph merge agree      Signal satisfaction with proposal"
+        echo "  ralph merge finalize   Apply staged files and commit"
+        echo "  ralph merge status     Show current merge status"
+        echo "  ralph merge reset      Clear all merge state"
         echo "  ralph merge complete   Clean up and disable ralph"
-        echo "  ralph merge reset      Clear all merge state (clears both machines)"
+        echo ""
+        echo "WORKFLOW: start → show → propose/comment → agree → finalize"
+        echo "CONSENSUS: Both agents must 'agree' before moving to next hunk."
+        echo "Either agent can propose or comment at any time - no fixed roles."
         exit 0
         ;;
     *)
