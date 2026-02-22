@@ -139,7 +139,11 @@ class HunkModel:
     """
 
     def __init__(self):
-        # Current hunk info
+        # ALL FILES to process - list of {"filepath": str, "total_hunks": int}
+        self.all_files: list = []
+        self.file_index: int = 0
+
+        # Current hunk info (derived from all_files[file_index])
         self.filepath: Optional[str] = None
         self.hunk_index: int = 0
         self.total_hunks: int = 0
@@ -202,17 +206,37 @@ class HunkModel:
                 f"dev1={self.dev1_approved}, dev2={self.dev2_approved}"
             )
 
-        print(f"Both approved! Hunk {self.hunk_index + 1}/{self.total_hunks} resolved.")
+        total_files = len(self.all_files) if self.all_files else 1
+        print(f"Both approved! Hunk {self.hunk_index + 1}/{self.total_hunks} of file {self.file_index + 1}/{total_files} resolved.")
 
         # CRITICAL: Apply the agreed proposal to the actual conflict file
         if self.proposal and self.filepath:
             self._apply_proposal_to_file()
 
-        # Auto-trigger next transition
+        # Auto-trigger next transition:
+        # 1. More hunks in current file? → advance_hunk
+        # 2. More files to process? → advance to next file (resets to NO_PROPOSAL_DEV1)
+        # 3. No more files? → all_done
         if self.hunk_index + 1 < self.total_hunks:
+            # More hunks in this file
             self.advance_hunk()
+        elif self.file_index + 1 < len(self.all_files):
+            # More files to process - advance to next file
+            self._advance_to_next_file()
+            self.advance_hunk()  # This resets state to NO_PROPOSAL_DEV1
         else:
+            # All files done
             self.all_done()
+
+    def _advance_to_next_file(self):
+        """Move to the next file in the list."""
+        self.file_index += 1
+        if self.file_index < len(self.all_files):
+            next_file = self.all_files[self.file_index]
+            self.filepath = next_file["filepath"]
+            self.total_hunks = next_file["total_hunks"]
+            self.hunk_index = -1  # Will be incremented to 0 by setup_next_hunk
+            print(f"\n>>> Advancing to file {self.file_index + 1}/{len(self.all_files)}: {self.filepath}")
 
     def _apply_proposal_to_file(self):
         """Write the agreed proposal to resolve the conflict in the actual file."""
@@ -390,6 +414,8 @@ class HunkModel:
         """Serialize model to dict for persistence."""
         return {
             'state': getattr(self, 'state', 'NO_PROPOSAL_DEV1'),
+            'all_files': self.all_files,
+            'file_index': self.file_index,
             'filepath': self.filepath,
             'hunk_index': self.hunk_index,
             'total_hunks': self.total_hunks,
@@ -405,6 +431,8 @@ class HunkModel:
     def from_dict(cls, data: dict) -> 'HunkModel':
         """Deserialize model from dict."""
         model = cls()
+        model.all_files = data.get('all_files', [])
+        model.file_index = data.get('file_index', 0)
         model.filepath = data.get('filepath')
         model.hunk_index = data.get('hunk_index', 0)
         model.total_hunks = data.get('total_hunks', 0)

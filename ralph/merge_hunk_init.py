@@ -53,10 +53,16 @@ def cmd_start_hunks():
     log_action(my_state, agent, f"started hunk merge for {len(files)} files")
     save_state(my_state)
 
-    # Initialize state machine model with first file
+    # Initialize state machine model with ALL files
     if all_hunks:
         first = all_hunks[0]
         model = HunkModel()
+
+        # Store ALL files for multi-file tracking
+        model.all_files = all_hunks
+        model.file_index = 0
+
+        # Set current file info
         model.filepath = first["filepath"]
         model.hunk_index = 0
         model.total_hunks = first["total_hunks"]
@@ -67,6 +73,8 @@ def cmd_start_hunks():
 
         # Save the model
         save_model(model)
+
+        print(f"\nTracking {len(all_hunks)} files in state machine.")
 
     print("\nHUNK-BY-HUNK MERGE: Both agents build each file together.")
     print("Run: ralph merge show")
