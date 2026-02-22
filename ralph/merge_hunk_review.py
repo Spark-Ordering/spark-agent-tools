@@ -77,14 +77,29 @@ def cmd_show_hunk():
 
     print(f"\n{'─'*60}")
     print(f"Turn: {state.get('whose_turn')} | You: {agent}")
-    print(f"\nTo propose a resolution:")
-    print(f"  1. Write the ACTUAL RESOLVED CODE to {proposal_file}")
-    print(f"     (Must be real code - NOT 'skip', 'duplicate', or empty)")
-    print(f"  2. Run: ralph merge propose")
-    print(f"\nOther actions:")
-    print(f"  ralph merge comment '<text>'  - Add to discussion")
-    if current_proposal:
-        print(f"  ralph merge agree             - Signal you're satisfied")
+
+    # Contextual instructions based on state
+    my_agreed = agreed.get(agent, False) if current_proposal else False
+    other_proposed = proposed_by and proposed_by != agent
+
+    if current_proposal and other_proposed and not my_agreed:
+        # Other agent proposed, I need to review
+        print(f"\n>>> REVIEW THE PROPOSAL ABOVE <<<")
+        print(f"  ralph merge agree    - Accept this proposal")
+        print(f"  ralph merge comment  - Discuss before deciding")
+        print(f"  (Or write counter-proposal to {proposal_file} then 'ralph merge propose')")
+    elif current_proposal and my_agreed:
+        # I already agreed, waiting for other
+        other = "dev2" if agent == "dev1" else "dev1"
+        print(f"\nYou agreed. Waiting for {other}.")
+    else:
+        # No proposal yet, or I'm the proposer
+        print(f"\nTo propose a resolution:")
+        print(f"  1. Write the ACTUAL RESOLVED CODE to {proposal_file}")
+        print(f"     (Must be real code - NOT 'skip', 'duplicate', or empty)")
+        print(f"  2. Run: ralph merge propose")
+        print(f"\nOther actions:")
+        print(f"  ralph merge comment '<text>'  - Add to discussion")
 
 
 def cmd_propose_hunk(code: str):
