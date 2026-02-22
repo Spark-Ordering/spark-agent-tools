@@ -103,9 +103,19 @@ def cmd_complete():
 
 
 def cmd_wait(seconds: int = 10) -> dict:
-    """Just wait. That's it."""
+    """Wait the full time, then check what to do next."""
+    from merge_hunk_nav import cmd_hunk_next_action
+
     time.sleep(seconds)
-    return {"waited": seconds}
+
+    state = load_state()
+    if state.get("phase") == "hunks":
+        result = cmd_hunk_next_action()
+    else:
+        result = cmd_next_action()
+
+    result["waited"] = seconds
+    return result
 
 
 def cmd_next_action() -> dict:
