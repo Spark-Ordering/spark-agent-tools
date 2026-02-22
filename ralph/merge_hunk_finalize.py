@@ -1,46 +1,65 @@
 #!/usr/bin/env python3
-"""Finalize hunk merge - apply staging files to repo."""
+"""Finalize hunk merge - commit resolved files after state machine is DONE."""
 
 import subprocess
-from merge_state import get_agent, load_agent_state, load_state, save_state, log_action
+from merge_state import get_agent
 from merge_git import get_branch_info
-from merge_hunks import apply_staging_to_repo
+from merge_hunk_state import load_model
 
 
 def cmd_finalize_hunks():
-    """Apply all staging files and commit."""
+    """Commit and push after all hunks resolved by state machine.
+
+    The NEW state machine (merge_hunk_state.py) already applies proposals
+    directly to conflict files via _apply_proposal_to_file() when reaching
+    COMPLETE state. By the time we're in DONE state, all files are resolved.
+
+    This function just needs to:
+    1. Verify we're in DONE state
+    2. Commit the resolved files
+    3. Push to origin
+    """
     agent = get_agent()
-    state = load_state()
-    hunk_files = state.get("hunk_files", [])
 
-    for fs in hunk_files:
-        if fs["status"] != "resolved":
-            print(f"Not resolved: {fs['filepath']}")
-            return
+    # Check NEW state machine - must be in DONE state
+    model = load_model()
+    if model.state != "DONE":
+        print(f"Not ready to finalize. State: {model.state}")
+        print(f"All hunks must be resolved first.")
+        return
 
-    print("Applying staged files...")
+    print("All hunks resolved. Committing...")
 
     current, base, other = get_branch_info()
 
+    # Checkout base branch and merge both dev branches
     subprocess.run(["git", "checkout", base], capture_output=True)
     subprocess.run(["git", "pull", "origin", base], capture_output=True)
     subprocess.run(["git", "merge", f"origin/{base}-dev1", "--no-edit"], capture_output=True)
     subprocess.run(["git", "merge", f"origin/{base}-dev2", "--no-edit"], capture_output=True)
 
-    for fs in hunk_files:
-        print(f"  {fs['filepath']}")
-        try:
-            apply_staging_to_repo(fs["filepath"])
-        except FileNotFoundError:
-            print(f"    WARNING: No staging file")
-
+    # Stage and commit - files already resolved by state machine
     subprocess.run(["git", "add", "-A"])
-    subprocess.run(["git", "commit", "-m", "Merge: collaborative hunk resolution"])
-    subprocess.run(["git", "push", "origin", base])
+    result = subprocess.run(
+        ["git", "commit", "-m", "Merge: collaborative hunk resolution"],
+        capture_output=True, text=True
+    )
 
-    my_state = load_agent_state(agent)
-    my_state["phase"] = "merged"
-    log_action(my_state, agent, "finalized")
-    save_state(my_state)
+    if result.returncode != 0:
+        if "nothing to commit" in result.stdout or "nothing to commit" in result.stderr:
+            print("Nothing to commit - files may already be committed.")
+        else:
+            print(f"Commit failed: {result.stderr}")
+            return
 
-    print("\nMerge complete! Run: ralph merge complete")
+    push_result = subprocess.run(
+        ["git", "push", "origin", base],
+        capture_output=True, text=True
+    )
+
+    if push_result.returncode != 0:
+        print(f"Push failed: {push_result.stderr}")
+        return
+
+    print(f"\nMerge complete! Pushed to {base}")
+    print("Run: ralph merge complete")
