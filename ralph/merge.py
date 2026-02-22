@@ -49,7 +49,12 @@ def main():
         cmd_show_hunk()
     elif cmd == "propose":
         from pathlib import Path
-        proposal_file = Path.home() / ".claude" / "merge-staging" / "proposal.txt"
+        from merge_state import get_base_branch_from_git, get_agent
+
+        # Scope proposal file to branch AND agent (each machine has its own)
+        branch = get_base_branch_from_git().replace("/", "-")
+        agent = get_agent()
+        proposal_file = Path.home() / ".claude" / "merge-staging" / f"proposal-{branch}-{agent}.txt"
 
         code = None
         # Priority 1: Read from proposal file

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hunk review commands: show, propose, comment, agree."""
 
-from merge_state import get_agent, load_agent_state, load_state, save_state, log_action, pass_turn
+from merge_state import get_agent, load_agent_state, load_state, save_state, log_action, pass_turn, get_base_branch_from_git
 from merge_hunks import (
     get_file_hunks, get_all_hunks_unified, format_conflict_for_display,
     write_staging, read_staging, get_staging_path
@@ -72,10 +72,14 @@ def cmd_show_hunk():
         dev2_agreed = "✓" if agreed.get("dev2") else "·"
         print(f"\nAgreement: dev1[{dev1_agreed}] dev2[{dev2_agreed}]")
 
+    branch = get_base_branch_from_git().replace("/", "-")
+    proposal_file = f"~/.claude/merge-staging/proposal-{branch}-{agent}.txt"
+
     print(f"\n{'─'*60}")
     print(f"Turn: {state.get('whose_turn')} | You: {agent}")
     print(f"\nTo propose a resolution:")
-    print(f"  1. Write resolved code to ~/.claude/merge-staging/proposal.txt")
+    print(f"  1. Write the ACTUAL RESOLVED CODE to {proposal_file}")
+    print(f"     (Must be real code - NOT 'skip', 'duplicate', or empty)")
     print(f"  2. Run: ralph merge propose")
     print(f"\nOther actions:")
     print(f"  ralph merge comment '<text>'  - Add to discussion")
