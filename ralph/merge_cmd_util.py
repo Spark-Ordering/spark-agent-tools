@@ -102,27 +102,10 @@ def cmd_complete():
     print("Cleanup complete. Ralph mode disabled.")
 
 
-def cmd_wait(max_seconds: int = 10) -> dict:
-    """
-    Wait for it to be this agent's turn. Polls every 2 seconds.
-
-    IMPORTANT: Claude agents should use 'ralph merge wait' instead of writing
-    their own polling loops. This command handles sync timing correctly.
-    """
-    agent = get_agent()
-    start = time.time()
-
-    while (time.time() - start) < max_seconds:
-        result = cmd_next_action()
-        if not result.get("wait_for"):
-            result["waited"] = True
-            return result
-        time.sleep(2)
-
-    result = cmd_next_action()
-    result["timeout"] = True
-    result["message"] = f"Timeout after {max_seconds}s. Still waiting for {result.get('wait_for', 'other agent')}. Try again in a moment."
-    return result
+def cmd_wait(seconds: int = 10) -> dict:
+    """Just wait. That's it."""
+    time.sleep(seconds)
+    return {"waited": seconds}
 
 
 def cmd_next_action() -> dict:
