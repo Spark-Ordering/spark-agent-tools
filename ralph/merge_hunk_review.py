@@ -74,8 +74,10 @@ def cmd_show_hunk():
 
     print(f"\n{'─'*60}")
     print(f"Turn: {state.get('whose_turn')} | You: {agent}")
-    print(f"\nActions:")
-    print(f"  ralph merge propose '<code>'  - Suggest a resolution")
+    print(f"\nTo propose a resolution:")
+    print(f"  1. Write resolved code to ~/.claude/merge-staging/proposal.txt")
+    print(f"  2. Run: ralph merge propose")
+    print(f"\nOther actions:")
     print(f"  ralph merge comment '<text>'  - Add to discussion")
     if current_proposal:
         print(f"  ralph merge agree             - Signal you're satisfied")

@@ -48,18 +48,34 @@ def main():
     elif cmd == "show":
         cmd_show_hunk()
     elif cmd == "propose":
-        if len(sys.argv) >= 3:
+        from pathlib import Path
+        proposal_file = Path.home() / ".claude" / "merge-staging" / "proposal.txt"
+
+        code = None
+        # Priority 1: Read from proposal file
+        if proposal_file.exists():
+            code = proposal_file.read_text()
+            if code.strip():
+                proposal_file.unlink()  # Clear after reading
+            else:
+                code = None
+
+        # Priority 2: Command line arg
+        if not code and len(sys.argv) >= 3:
             code = sys.argv[2]
-        else:
-            # Read from stdin (allows heredoc without permission prompts)
+
+        # Priority 3: stdin
+        if not code:
             import sys as _sys
             if not _sys.stdin.isatty():
                 code = _sys.stdin.read()
-            else:
-                print("Usage: ralph merge propose << 'EOF'")
-                print("your code here")
-                print("EOF")
-                return
+
+        if not code or not code.strip():
+            print("ERROR: Empty proposal. Write your resolved code to:")
+            print(f"  {proposal_file}")
+            print("Then run: ralph merge propose")
+            return
+
         cmd_propose_hunk(code)
     elif cmd == "comment":
         if len(sys.argv) >= 3:
