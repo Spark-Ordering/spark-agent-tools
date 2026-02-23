@@ -275,7 +275,7 @@ def format_hunk_for_display(hunk: Dict, agent: str) -> str:
     lines.append(f"=== {agent}'s changes ===")
     lines.append(f"Lines {hunk['old_start']}-{hunk['old_start'] + hunk['old_count']}")
     lines.append(hunk['header'])
-    lines.append(hunk['content'][:2000])  # Truncate if huge
+    lines.append(hunk['content'])
     return '\n'.join(lines)
 
 
@@ -297,3 +297,60 @@ def format_conflict_for_display(unified_hunk: Dict) -> str:
     lines.append("3. Other agent reviews and approves: ralph merge approve-hunk")
     lines.append("=" * 60)
     return '\n'.join(lines)
+
+
+def count_unresolved_hunks_in_staging(filepath: str) -> int:
+    """
+    Count how many hunks in the staging file are still unresolved.
+
+    A hunk is "resolved" if the staging file's content for that region
+    differs from the base content (i.e., someone wrote merged content).
+
+    A hunk is "unresolved" if the staging file still matches the base
+    for that region (i.e., no merge work done yet).
+
+    Returns the count of unresolved hunks.
+    """
+    staging_path = get_staging_path(filepath)
+    if not staging_path.exists():
+        # No staging file = can't count, return -1 to signal error
+        return -1
+
+    staging_content = staging_path.read_text()
+    staging_lines = staging_content.splitlines()
+
+    # Get base content and hunks from git
+    file_info = get_file_hunks(filepath)
+    base_lines = file_info['base_content'].splitlines()
+    unified_hunks = get_all_hunks_unified(file_info)
+
+    if not unified_hunks:
+        return 0
+
+    unresolved = 0
+    for hunk in unified_hunks:
+        # Get the line range this hunk affects (1-indexed in git, convert to 0-indexed)
+        start = hunk['line_start'] - 1
+
+        # Determine how many lines this hunk spans in the original (base) file
+        if hunk['type'] == 'conflict':
+            # Use the larger of the two hunk sizes
+            dev1_count = hunk['dev1_hunk']['old_count'] if hunk['dev1_hunk'] else 0
+            dev2_count = hunk['dev2_hunk']['old_count'] if hunk['dev2_hunk'] else 0
+            span = max(dev1_count, dev2_count)
+        else:
+            # dev1_only or dev2_only
+            h = hunk['dev1_hunk'] or hunk['dev2_hunk']
+            span = h['old_count'] if h else 0
+
+        end = start + span
+
+        # Safely extract regions (handle out of bounds)
+        base_region = base_lines[start:end] if start < len(base_lines) else []
+        staging_region = staging_lines[start:end] if start < len(staging_lines) else []
+
+        # If staging matches base for this region, hunk is unresolved
+        if staging_region == base_region:
+            unresolved += 1
+
+    return unresolved

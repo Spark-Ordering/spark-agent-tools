@@ -8,18 +8,27 @@ ARCHITECTURE:
 - CLI commands just trigger events on the machine
 
 STATES:
+- INIT: Starting state - call begin() to start the workflow
+- CHECK_REMAINING: Loop controller - checks if more files/hunks remain
+- CHECKING_FILE: Checks if current file is identical or has hunks
 - NO_PROPOSAL_DEV1: No proposal exists, dev1's turn to propose
 - PROPOSAL_DEV2_NEITHER: Proposal exists, dev2's turn, neither approved
 - PROPOSAL_DEV1_DEV2_APPROVED: Proposal exists, dev1's turn, dev2 approved
 - PROPOSAL_DEV1_NEITHER: Proposal exists, dev1's turn, neither approved
 - PROPOSAL_DEV2_DEV1_APPROVED: Proposal exists, dev2's turn, dev1 approved
-- COMPLETE: Both approved, advance to next hunk
+- RESOLVE_HUNK: Both approved, apply proposal and advance
+- DONE: All files resolved
 
 TRIGGERS:
+- has_more: More files/hunks remain
+- no_more: No more files/hunks
+- has_hunks: Current file has hunks to resolve
+- is_identical: Current file is identical (auto-stage)
 - dev1_propose: dev1 proposes (requires filepath, comment)
 - dev2_propose: dev2 counter-proposes
 - dev1_approve: dev1 approves current proposal
 - dev2_approve: dev2 approves current proposal
+- hunk_resolved: Hunk was resolved, advance to CHECK_REMAINING
 """
 
 import json
@@ -28,18 +37,23 @@ from pathlib import Path
 from typing import Optional
 from transitions import Machine, State
 
+from merge_hunks import get_staging_path, get_file_hunks, get_all_hunks_unified, count_unresolved_hunks_in_staging
+
 
 # =============================================================================
 # STATES
 # =============================================================================
 
 STATES = [
+    State(name='INIT'),             # Starting state - call begin() to start the workflow
+    State(name='CHECK_REMAINING'),  # Loop controller - checks if more files/hunks remain
+    State(name='CHECKING_FILE'),    # Checks if current file is identical or has hunks
     State(name='NO_PROPOSAL_DEV1'),
     State(name='PROPOSAL_DEV2_NEITHER'),
     State(name='PROPOSAL_DEV1_DEV2_APPROVED'),
     State(name='PROPOSAL_DEV1_NEITHER'),
     State(name='PROPOSAL_DEV2_DEV1_APPROVED'),
-    State(name='COMPLETE'),
+    State(name='RESOLVE_HUNK'),     # Apply proposal and advance (renamed from COMPLETE)
     State(name='DONE', final=True),
 ]
 
@@ -49,6 +63,38 @@ STATES = [
 # =============================================================================
 
 TRANSITIONS = [
+    # From INIT: start the workflow
+    {
+        'trigger': 'begin',
+        'source': 'INIT',
+        'dest': 'CHECK_REMAINING',
+    },
+
+    # From CHECK_REMAINING: loop controller
+    {
+        'trigger': 'has_more',
+        'source': 'CHECK_REMAINING',
+        'dest': 'CHECKING_FILE',
+    },
+    {
+        'trigger': 'no_more',
+        'source': 'CHECK_REMAINING',
+        'dest': 'DONE',
+    },
+
+    # From CHECKING_FILE: check current file status
+    {
+        'trigger': 'has_hunks',
+        'source': 'CHECKING_FILE',
+        'dest': 'NO_PROPOSAL_DEV1',
+    },
+    {
+        'trigger': 'is_identical',
+        'source': 'CHECKING_FILE',
+        'dest': 'CHECK_REMAINING',
+        'before': 'stage_identical_and_advance',
+    },
+
     # From NO_PROPOSAL_DEV1: only dev1 can propose
     {
         'trigger': 'dev1_propose',
@@ -75,7 +121,7 @@ TRANSITIONS = [
     {
         'trigger': 'dev1_approve',
         'source': 'PROPOSAL_DEV1_DEV2_APPROVED',
-        'dest': 'COMPLETE',
+        'dest': 'RESOLVE_HUNK',
         'before': 'set_dev1_approval',
     },
     {
@@ -103,7 +149,7 @@ TRANSITIONS = [
     {
         'trigger': 'dev2_approve',
         'source': 'PROPOSAL_DEV2_DEV1_APPROVED',
-        'dest': 'COMPLETE',
+        'dest': 'RESOLVE_HUNK',
         'before': 'set_dev2_approval',
     },
     {
@@ -113,17 +159,12 @@ TRANSITIONS = [
         'before': 'store_dev2_proposal',
     },
 
-    # From COMPLETE: auto-advance to next hunk or finalize
+    # From RESOLVE_HUNK: apply proposal and go to CHECK_REMAINING
     {
-        'trigger': 'advance_hunk',
-        'source': 'COMPLETE',
-        'dest': 'NO_PROPOSAL_DEV1',
-        'before': 'setup_next_hunk',
-    },
-    {
-        'trigger': 'all_done',
-        'source': 'COMPLETE',
-        'dest': 'DONE',
+        'trigger': 'hunk_resolved',
+        'source': 'RESOLVE_HUNK',
+        'dest': 'CHECK_REMAINING',
+        'before': 'apply_and_advance',
     },
 ]
 
@@ -139,7 +180,7 @@ class HunkModel:
     """
 
     def __init__(self):
-        # ALL FILES to process - list of {"filepath": str, "total_hunks": int}
+        # ALL FILES to process - list of filepath strings
         self.all_files: list = []
         self.file_index: int = 0
 
@@ -157,6 +198,10 @@ class HunkModel:
         # These MUST be reset when counter-proposing
         self.dev1_approved: bool = False
         self.dev2_approved: bool = False
+
+        # SEEN TRACKING - which agents have viewed the current proposal
+        # Must run 'ralph merge show' before approving
+        self.proposal_seen_by: list = []
 
         # This agent's identity
         self.agent: Optional[str] = None
@@ -179,6 +224,7 @@ class HunkModel:
         self.proposed_by = None
         self.dev1_approved = False
         self.dev2_approved = False
+        self.proposal_seen_by = []
         self.turn_started_at = time.time()
 
     def on_enter_PROPOSAL_DEV2_NEITHER(self, event=None):
@@ -197,96 +243,79 @@ class HunkModel:
         """Dev2's turn starts."""
         self.turn_started_at = time.time()
 
-    def on_enter_COMPLETE(self, event=None):
-        """Both approved - APPLY the proposal to the file, then advance."""
+    def on_enter_CHECK_REMAINING(self, event=None):
+        """Loop controller - are all files in staging with clean content?
+
+        YES → DONE
+        NO → CHECKING_FILE for the first incomplete file
+        """
+        for i, filepath in enumerate(self.all_files):
+            if self._is_file_resolved(filepath):
+                continue
+
+            # This file needs processing
+            self.file_index = i
+            self.filepath = filepath
+            self.hunk_index = 0
+            print(f"\n>>> File {i + 1}/{len(self.all_files)}: {filepath}")
+            self.has_more()
+            return
+
+        # All files in staging with clean content
+        self.no_more()
+
+    def _is_file_resolved(self, filepath: str) -> bool:
+        """Check if file has clean staging (no conflict markers)."""
+        staging_path = get_staging_path(filepath)
+        if not staging_path.exists():
+            return False
+        content = staging_path.read_text()
+        has_conflicts = '<<<<<<<' in content or '=======' in content or '>>>>>>>' in content
+        return not has_conflicts
+
+    def on_enter_CHECKING_FILE(self, event=None):
+        """Analyze current file via git - is it identical or does it have hunks?
+
+        Git analysis determines:
+        - 0 hunks → identical between branches → auto-stage
+        - >0 hunks → has conflicts → enter proposal workflow
+        """
+        # Clear proposal state for new file/hunk
+        self.proposal = None
+        self.proposal_comment = None
+        self.proposed_by = None
+        self.dev1_approved = False
+        self.dev2_approved = False
+        self.proposal_seen_by = []
+
+        # Git analysis - compare branches to find overlapping hunks
+        file_info = get_file_hunks(self.filepath)
+        unified_hunks = get_all_hunks_unified(file_info)
+        self.total_hunks = len(unified_hunks)
+
+        if self.total_hunks == 0:
+            # File is identical between branches - auto-stage
+            self.is_identical()
+        else:
+            # File has overlapping hunks - enter proposal workflow
+            print(f"    {self.total_hunks} hunks remaining")
+            self.has_hunks()
+
+    def on_enter_RESOLVE_HUNK(self, event=None):
+        """Both approved - apply the proposal and trigger advancement."""
         # VERIFY both agents actually approved
         if not self.dev1_approved or not self.dev2_approved:
             raise RuntimeError(
-                f"COMPLETE reached without both approvals! "
+                f"RESOLVE_HUNK reached without both approvals! "
                 f"dev1={self.dev1_approved}, dev2={self.dev2_approved}"
             )
 
         total_files = len(self.all_files) if self.all_files else 1
-        print(f"Both approved! Hunk {self.hunk_index + 1}/{self.total_hunks} of file {self.file_index + 1}/{total_files} resolved.")
+        print(f"Both approved! File {self.file_index + 1}/{total_files}: {self.filepath} - hunk resolved ({self.total_hunks - 1} remaining)")
 
-        # CRITICAL: Apply the agreed proposal to the actual conflict file
-        if self.proposal and self.filepath:
-            self._apply_proposal_to_file()
+        # Trigger the transition to CHECK_REMAINING
+        self.hunk_resolved()
 
-        # Auto-trigger next transition:
-        # 1. More hunks in current file? → advance_hunk
-        # 2. More files to process? → advance to next file (resets to NO_PROPOSAL_DEV1)
-        # 3. No more files? → all_done
-        if self.hunk_index + 1 < self.total_hunks:
-            # More hunks in this file
-            self.advance_hunk()
-        elif self.file_index + 1 < len(self.all_files):
-            # More files to process - advance to next file
-            self._advance_to_next_file()
-            self.advance_hunk()  # This resets state to NO_PROPOSAL_DEV1
-        else:
-            # All files done
-            self.all_done()
-
-    def _advance_to_next_file(self):
-        """Move to the next file in the list."""
-        self.file_index += 1
-        if self.file_index < len(self.all_files):
-            next_file = self.all_files[self.file_index]
-            self.filepath = next_file["filepath"]
-            self.total_hunks = next_file["total_hunks"]
-            self.hunk_index = -1  # Will be incremented to 0 by setup_next_hunk
-            print(f"\n>>> Advancing to file {self.file_index + 1}/{len(self.all_files)}: {self.filepath}")
-
-    def _apply_proposal_to_file(self):
-        """Write the agreed proposal to resolve the conflict in the actual file."""
-        from pathlib import Path
-        import subprocess
-
-        # Get the conflicted file path
-        repo_root = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True
-        ).stdout.strip()
-
-        conflict_file = Path(repo_root) / self.filepath
-
-        if not conflict_file.exists():
-            print(f"ERROR: Conflict file not found: {conflict_file}")
-            return
-
-        # Read current content with conflict markers
-        content = conflict_file.read_text()
-
-        # Find and replace the conflict block with the proposal
-        # Conflict markers look like:
-        # <<<<<<< HEAD
-        # ... dev1 changes ...
-        # =======
-        # ... dev2 changes ...
-        # >>>>>>> branch
-
-        import re
-        conflict_pattern = r'<<<<<<<[^\n]*\n.*?=======\n.*?>>>>>>>[^\n]*\n?'
-
-        # Replace the FIRST conflict with the proposal
-        # (We handle one hunk at a time)
-        new_content, count = re.subn(
-            conflict_pattern,
-            self.proposal + '\n',
-            content,
-            count=1,
-            flags=re.DOTALL
-        )
-
-        if count == 0:
-            print(f"WARNING: No conflict markers found in {self.filepath}")
-            print("The file may have already been resolved or has different format.")
-            return
-
-        # Write the resolved content
-        conflict_file.write_text(new_content)
-        print(f"✓ Applied proposal to {self.filepath}")
 
     def on_enter_DONE(self, event=None):
         """All hunks complete."""
@@ -318,6 +347,9 @@ class HunkModel:
 
         CRITICAL: Proposing RESETS ALL approvals per spec.
         "Proposing resets ALL approvals - new proposal needs fresh consensus"
+
+        VALIDATION: Proposal must resolve exactly ONE hunk at a time.
+        If staged file resolves more than one hunk, reject the proposal.
         """
         code = event.kwargs.get('code')
         comment = event.kwargs.get('comment')
@@ -327,6 +359,22 @@ class HunkModel:
         if not comment or not comment.strip():
             raise ValueError("Proposal comment cannot be empty")
 
+        # VALIDATE: Check that proposal resolves exactly ONE hunk
+        # Compare staging file content against base to count unresolved hunks
+        if self.total_hunks > 1:
+            unresolved = count_unresolved_hunks_in_staging(self.filepath)
+            if unresolved >= 0:  # -1 means staging file doesn't exist
+                # After this proposal, we should have (total - 1) unresolved hunks
+                # i.e., exactly ONE hunk should be resolved
+                expected_unresolved = self.total_hunks - 1
+                if unresolved < expected_unresolved:
+                    hunks_resolved = self.total_hunks - unresolved
+                    raise ValueError(
+                        f"Proposal resolves {hunks_resolved} hunks at once (expected 1). "
+                        f"Total hunks: {self.total_hunks}, unresolved in staging: {unresolved}. "
+                        f"Please resolve ONE hunk at a time."
+                    )
+
         self.proposal = code.strip()
         self.proposal_comment = comment.strip()
         self.proposed_by = agent
@@ -335,14 +383,28 @@ class HunkModel:
         self.dev1_approved = False
         self.dev2_approved = False
 
-    def setup_next_hunk(self, event=None):
-        """Advance to next hunk, clear proposal and approvals."""
-        self.hunk_index += 1
-        self.proposal = None
-        self.proposal_comment = None
-        self.proposed_by = None
-        self.dev1_approved = False
-        self.dev2_approved = False
+        # RESET SEEN TRACKING - new proposal must be viewed before approving
+        self.proposal_seen_by = []
+
+    def stage_identical_and_advance(self, event=None):
+        """Auto-stage identical file content to staging directory."""
+        print(f"✅ {self.filepath} - identical content, auto-staged")
+
+        # Get the file content and stage it
+        file_info = get_file_hunks(self.filepath)
+        content = file_info.get('dev1_content', '')
+        if content:
+            staging_path = get_staging_path(self.filepath)
+            staging_path.parent.mkdir(parents=True, exist_ok=True)
+            staging_path.write_text(content)
+
+    def apply_and_advance(self, event=None):
+        """No-op - staging already contains the agreed proposal.
+
+        Agent writes resolved code to staging before calling propose.
+        Finalize will copy staging files to repo.
+        """
+        pass
 
     # -------------------------------------------------------------------------
     # Helpers: whose turn based on state
@@ -350,14 +412,17 @@ class HunkModel:
 
     def get_turn(self) -> str:
         """Get whose turn it is based on current state."""
-        state = getattr(self, 'state', 'NO_PROPOSAL_DEV1')
+        state = getattr(self, 'state', 'INIT')
         turn_map = {
+            'INIT': None,             # Starting state
+            'CHECK_REMAINING': None,  # Transient state
+            'CHECKING_FILE': None,    # Transient state
             'NO_PROPOSAL_DEV1': 'dev1',
             'PROPOSAL_DEV2_NEITHER': 'dev2',
             'PROPOSAL_DEV1_DEV2_APPROVED': 'dev1',
             'PROPOSAL_DEV1_NEITHER': 'dev1',
             'PROPOSAL_DEV2_DEV1_APPROVED': 'dev2',
-            'COMPLETE': None,
+            'RESOLVE_HUNK': None,     # Transient state
             'DONE': None,
         }
         return turn_map.get(state, 'dev1')
@@ -369,10 +434,15 @@ class HunkModel:
         Based on mermaid diagram - each state with multiple outgoing
         transitions must present ALL options.
         """
-        state = getattr(self, 'state', 'NO_PROPOSAL_DEV1')
+        state = getattr(self, 'state', 'CHECK_REMAINING')
 
         # Map each state to ALL its valid outgoing transitions
         actions_map = {
+            # Transient states - no user action
+            'INIT': [],
+            'CHECK_REMAINING': [],
+            'CHECKING_FILE': [],
+            'RESOLVE_HUNK': [],
             # Only propose - nothing to approve yet
             'NO_PROPOSAL_DEV1': [
                 "ralph merge propose '<file>' '<comment>'"
@@ -397,7 +467,6 @@ class HunkModel:
                 "ralph merge approve",
                 "ralph merge propose '<file>' '<counter-comment>'",
             ],
-            'COMPLETE': [],
             'DONE': ["ralph merge finalize"],
         }
         return actions_map.get(state, [])
@@ -406,6 +475,15 @@ class HunkModel:
         """Check if it's this agent's turn."""
         return self.get_turn() == self.agent
 
+    def mark_seen(self, agent: str):
+        """Mark that an agent has seen the current proposal."""
+        if agent not in self.proposal_seen_by:
+            self.proposal_seen_by.append(agent)
+
+    def has_seen_proposal(self, agent: str) -> bool:
+        """Check if an agent has seen the current proposal."""
+        return agent in self.proposal_seen_by
+
     # -------------------------------------------------------------------------
     # Serialization
     # -------------------------------------------------------------------------
@@ -413,7 +491,7 @@ class HunkModel:
     def to_dict(self) -> dict:
         """Serialize model to dict for persistence."""
         return {
-            'state': getattr(self, 'state', 'NO_PROPOSAL_DEV1'),
+            'state': self.state,
             'all_files': self.all_files,
             'file_index': self.file_index,
             'filepath': self.filepath,
@@ -424,6 +502,7 @@ class HunkModel:
             'proposed_by': self.proposed_by,
             'dev1_approved': self.dev1_approved,
             'dev2_approved': self.dev2_approved,
+            'proposal_seen_by': self.proposal_seen_by,
             'turn_started_at': self.turn_started_at,
         }
 
@@ -441,6 +520,7 @@ class HunkModel:
         model.proposed_by = data.get('proposed_by')
         model.dev1_approved = data.get('dev1_approved', False)
         model.dev2_approved = data.get('dev2_approved', False)
+        model.proposal_seen_by = data.get('proposal_seen_by', [])
         model.turn_started_at = data.get('turn_started_at', time.time())
         # Note: state is set by Machine after creation
         return model
@@ -450,7 +530,7 @@ class HunkModel:
 # MACHINE FACTORY
 # =============================================================================
 
-def create_machine(model: HunkModel, initial_state: str = 'NO_PROPOSAL_DEV1') -> Machine:
+def create_machine(model: HunkModel, initial_state: str) -> Machine:
     """
     Create a state machine attached to the given model.
 
@@ -499,10 +579,10 @@ def load_model() -> HunkModel:
         with open(state_file) as f:
             data = json.load(f)
         model = HunkModel.from_dict(data)
-        initial_state = data.get('state', 'NO_PROPOSAL_DEV1')
+        initial_state = data['state']
     else:
         model = HunkModel()
-        initial_state = 'NO_PROPOSAL_DEV1'
+        initial_state = 'INIT'
 
     # Attach machine at the correct state
     create_machine(model, initial_state=initial_state)
@@ -532,9 +612,9 @@ def format_state_display(model: HunkModel) -> str:
     # Header
     lines.append("=" * 59)
     if model.filepath:
-        lines.append(f"HUNK: {model.filepath} ({model.hunk_index + 1}/{model.total_hunks})")
+        lines.append(f"FILE: {model.filepath} ({model.total_hunks} hunks remaining)")
     else:
-        lines.append("HUNK: (none)")
+        lines.append("FILE: (none)")
     lines.append(f"STATE: {model.state}")
     lines.append("=" * 59)
     lines.append("")
@@ -543,10 +623,7 @@ def format_state_display(model: HunkModel) -> str:
     if model.proposal:
         lines.append(f"PROPOSAL by {model.proposed_by}:")
         lines.append("```")
-        proposal_text = model.proposal
-        if len(proposal_text) > 2000:
-            proposal_text = proposal_text[:2000] + "\n... (truncated)"
-        lines.append(proposal_text)
+        lines.append(model.proposal)
         lines.append("```")
 
         if model.proposal_comment:
@@ -566,6 +643,14 @@ def format_state_display(model: HunkModel) -> str:
             lines.append("YOUR OPTIONS:")
             for i, action in enumerate(actions, 1):
                 lines.append(f"  {i}. {action}")
+
+        # ADVOCACY INSTRUCTIONS - show when reviewing other agent's proposal
+        if model.proposal and model.proposed_by != model.agent:
+            lines.append("")
+            lines.append("⚠️  ADVOCACY CHECK:")
+            lines.append(f"   You are {model.agent}. This proposal is from {model.proposed_by}.")
+            lines.append("   ADVOCATE for your branch's work. If your files/exports are being")
+            lines.append("   excluded, COUNTER-PROPOSE. Don't approve deletion of your own work.")
     else:
         turn = model.get_turn()
         if turn:

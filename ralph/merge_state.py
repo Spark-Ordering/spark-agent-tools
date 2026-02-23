@@ -13,6 +13,62 @@ from datetime import datetime
 
 COORD_DIR = Path.home() / ".claude" / "coordination"
 
+# Single source of truth for turn - lives on dev2's machine
+TURN_FILE = "/Users/carlos/.claude/coordination/turn.txt"
+DEV2_HOST = "carlos@192.168.1.104"
+
+
+def read_turn() -> str:
+    """Read whose turn from the single source of truth (dev2's machine)."""
+    agent = get_agent()
+
+    if agent == "dev2":
+        # Local read
+        turn_path = Path(TURN_FILE)
+        if turn_path.exists():
+            return turn_path.read_text().strip()
+        return "dev1"  # Default: dev1 goes first
+
+    # dev1: SSH to dev2 to read
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", DEV2_HOST, f"cat {TURN_FILE} 2>/dev/null || echo dev1"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip() or "dev1"
+    except:
+        return "dev1"
+
+
+def toggle_turn() -> bool:
+    """Toggle turn to the other agent. Only succeeds if it's currently our turn."""
+    agent = get_agent()
+    current = read_turn()
+
+    # Verification: can only toggle if it's MY turn
+    if current != agent:
+        print(f"Cannot toggle turn: it's {current}'s turn, not {agent}'s")
+        return False
+
+    other = "dev2" if agent == "dev1" else "dev1"
+
+    if agent == "dev2":
+        # Local write
+        turn_path = Path(TURN_FILE)
+        turn_path.parent.mkdir(parents=True, exist_ok=True)
+        turn_path.write_text(other)
+        return True
+
+    # dev1: SSH to dev2 to write
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", DEV2_HOST, f"mkdir -p $(dirname {TURN_FILE}) && echo {other} > {TURN_FILE}"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0
+    except:
+        return False
+
 
 def get_base_branch_from_git() -> str:
     """Get base branch from current git branch (strips -dev1/-dev2 suffix)."""
@@ -132,18 +188,8 @@ def merge_states(dev1_state: dict, dev2_state: dict) -> dict:
     base_branch = dev1_state.get("base_branch") or dev2_state.get("base_branch")
     applying_conflicts = dev1_state.get("applying_conflicts") or dev2_state.get("applying_conflicts")
 
-    # TURN: check whose_turn from both states, use most recently set
-    h1 = dev1_state.get("history", [])
-    h2 = dev2_state.get("history", [])
-    last_t1 = h1[-1]["time"] if h1 else ""
-    last_t2 = h2[-1]["time"] if h2 else ""
-
-    if last_t1 > last_t2:
-        whose_turn = dev1_state.get("whose_turn", "dev1")
-    elif last_t2 > last_t1:
-        whose_turn = dev2_state.get("whose_turn", "dev1")
-    else:
-        whose_turn = dev1_state.get("whose_turn") or dev2_state.get("whose_turn") or "dev1"
+    # TURN: single source of truth from turn file
+    whose_turn = read_turn()
 
     # Merge files
     merged_files = {}
@@ -236,27 +282,22 @@ def merge_states(dev1_state: dict, dev2_state: dict) -> dict:
             a1 = f1.get("agreed", {})
             a2 = f2.get("agreed", {})
 
-            # Check if the hunk has been advanced by either agent
-            hunk_advanced = (f1.get("current_hunk", 0) != f2.get("current_hunk", 0))
+            # OR the agreed flags from both agents
+            merged_agreed = {
+                "dev1": a1.get("dev1") or a2.get("dev1"),
+                "dev2": a1.get("dev2") or a2.get("dev2"),
+            }
 
-            if is_resolved or hunk_advanced:
-                # If one agent advanced, both must have agreed at that moment
-                # The clearing of flags by the advancing agent shouldn't reset this
-                merged_agreed = {"dev1": True, "dev2": True}
-                # Clear proposal since hunk is done
+            # Use whichever proposal exists
+            prop1 = f1.get("current_proposal")
+            prop2 = f2.get("current_proposal")
+            current_proposal = prop1 or prop2
+            proposed_by = f1.get("proposed_by") or f2.get("proposed_by")
+
+            # Only clear proposal if file is fully resolved
+            if is_resolved:
                 current_proposal = None
                 proposed_by = None
-            else:
-                # Normal case: OR the flags from both agents
-                merged_agreed = {
-                    "dev1": a1.get("dev1") or a2.get("dev1"),
-                    "dev2": a1.get("dev2") or a2.get("dev2"),
-                }
-                # Use most recent proposal
-                prop1 = f1.get("current_proposal")
-                prop2 = f2.get("current_proposal")
-                current_proposal = prop1 or prop2
-                proposed_by = f1.get("proposed_by") or f2.get("proposed_by")
 
             merged_file = {
                 "filepath": f1.get("filepath") or f2.get("filepath"),
@@ -321,7 +362,3 @@ def log_action(state: dict, agent: str, action: str):
     })
 
 
-def pass_turn(state: dict, agent: str):
-    """Pass turn to the other agent."""
-    other = "dev2" if agent == "dev1" else "dev1"
-    state["whose_turn"] = other

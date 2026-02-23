@@ -21,6 +21,14 @@ SYNC_DIRS=(
     "$HOME/.claude/teams"
     "$HOME/.claude/plans"
     "$HOME/.claude/coordination"
+    "$HOME/.claude/hooks"
+    "$HOME/.claude/skills"
+    "$HOME/.claude/merge-staging"
+)
+
+# One-way sync dirs (dev1 → dev2 only, for code/scripts)
+ONEWAY_DIRS=(
+    "$HOME/Code/spark-agent-tools"
 )
 LOG_FILE="$HOME/.claude/logs/claude-sync.log"
 LOCK_FILE="/tmp/claude-sync.lock"
@@ -58,6 +66,20 @@ sync_dir() {
         "$REMOTE:$dir/" "$dir/" 2>/dev/null
 }
 
+# Sync a directory one-way (local → remote only)
+# For code/scripts that should only be edited on dev1
+sync_dir_oneway() {
+    local dir="$1"
+
+    # Push local → remote (delete on remote if deleted locally)
+    rsync -az --delete --timeout=10 \
+        --exclude='.git' \
+        --exclude='node_modules' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        "$dir/" "$REMOTE:$dir/" 2>/dev/null
+}
+
 do_sync() {
     # Use lock to prevent concurrent runs
     exec 200>"$LOCK_FILE"
@@ -71,10 +93,17 @@ do_sync() {
         exit 0
     fi
 
-    # Sync each directory
+    # Sync each bidirectional directory
     for dir in "${SYNC_DIRS[@]}"; do
         if [[ -d "$dir" ]] || ssh -o ConnectTimeout=3 "$REMOTE" "[[ -d $dir ]]" 2>/dev/null; then
             sync_dir "$dir"
+        fi
+    done
+
+    # Sync each one-way directory (dev1 → dev2)
+    for dir in "${ONEWAY_DIRS[@]}"; do
+        if [[ -d "$dir" ]]; then
+            sync_dir_oneway "$dir"
         fi
     done
 
@@ -95,7 +124,7 @@ install_service() {
         <string>$(realpath "$0")</string>
     </array>
     <key>StartInterval</key>
-    <integer>30</integer>
+    <integer>10</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
@@ -111,7 +140,7 @@ EOF
     launchctl load "$PLIST_PATH"
 
     echo "✅ Installed and started claude-sync service"
-    echo "   Syncs every 30 seconds"
+    echo "   Syncs every 10 seconds"
     echo "   Log: $LOG_FILE"
 }
 

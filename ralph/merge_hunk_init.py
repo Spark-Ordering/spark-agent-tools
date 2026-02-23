@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Initialize hunk-based merge and status commands."""
 
-from merge_state import get_agent, load_agent_state, load_state, save_state, log_action, read_turn
+from merge_state import get_agent, load_agent_state, save_state, log_action
 from merge_git import get_branch_info, get_conflicting_files
-from merge_hunks import get_file_hunks, get_all_hunks_unified
 from merge_hunk_state import HunkModel, create_machine, save_model
 
 
 def cmd_start_hunks():
-    """Initialize hunk-based merge workflow."""
+    """Initialize hunk-based merge workflow.
+
+    This function only gathers filepaths - all file analysis
+    (identical content, hunk counting) is done by the state machine.
+    """
     agent = get_agent()
     current, base, other = get_branch_info()
 
@@ -20,62 +23,34 @@ def cmd_start_hunks():
         return
 
     print(f"Found {len(files)} files with overlapping changes:")
+    for filepath in files:
+        print(f"  - {filepath}")
 
     # Initialize legacy state (for backward compat during transition)
     my_state = load_agent_state(agent)
     my_state["phase"] = "hunks"
     my_state["base_branch"] = base
-    my_state["hunk_files"] = []
-
-    all_hunks = []
-
-    for filepath in files:
-        print(f"  Analyzing: {filepath}")
-        file_info = get_file_hunks(filepath)
-        unified_hunks = get_all_hunks_unified(file_info)
-
-        my_state["hunk_files"].append({
-            "filepath": filepath,
-            "total_hunks": len(unified_hunks),
-            "current_hunk": 0,
-            "hunks_resolved": 0,
-            "status": "pending"
-        })
-        all_hunks.append({
-            "filepath": filepath,
-            "total_hunks": len(unified_hunks)
-        })
-        print(f"    {len(unified_hunks)} hunks to resolve")
-
-    if my_state["hunk_files"]:
-        my_state["current_file_index"] = 0
 
     log_action(my_state, agent, f"started hunk merge for {len(files)} files")
     save_state(my_state)
 
-    # Initialize state machine model with ALL files
-    if all_hunks:
-        first = all_hunks[0]
-        model = HunkModel()
+    # Initialize state machine model with ALL files (as filepath strings)
+    model = HunkModel()
+    model.all_files = files  # List of filepath strings
+    model.file_index = 0
+    model.filepath = files[0]  # Start with first file
+    model.agent = agent
 
-        # Store ALL files for multi-file tracking
-        model.all_files = all_hunks
-        model.file_index = 0
+    # Create machine at INIT, then trigger begin() to start the workflow.
+    # This ensures on_enter_CHECK_REMAINING fires (transitions library
+    # doesn't fire on_enter callbacks for the initial state).
+    create_machine(model, initial_state='INIT')
+    model.begin()  # Triggers INIT -> CHECK_REMAINING, firing on_enter_CHECK_REMAINING
 
-        # Set current file info
-        model.filepath = first["filepath"]
-        model.hunk_index = 0
-        model.total_hunks = first["total_hunks"]
-        model.agent = agent
+    # Save the model (now in a waiting state after auto-transitions)
+    save_model(model)
 
-        # Create machine at initial state
-        create_machine(model, initial_state='NO_PROPOSAL_DEV1')
-
-        # Save the model
-        save_model(model)
-
-        print(f"\nTracking {len(all_hunks)} files in state machine.")
-
+    print(f"\nTracking {len(files)} files in state machine.")
     print("\nHUNK-BY-HUNK MERGE: Both agents build each file together.")
     print("Run: ralph merge show")
 

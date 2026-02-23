@@ -1,66 +1,54 @@
 #!/usr/bin/env python3
-"""Hunk merge navigation - next action logic."""
+"""
+Hunk merge navigation - next action from state machine.
+"""
 
-from merge_state import get_agent, load_state
+from merge_state import get_agent
+from merge_hunk_state import load_model
 
 
 def cmd_hunk_next_action() -> dict:
-    """Get next action for hunk workflow."""
+    """
+    Get next action for hunk workflow from the state machine.
+
+    Returns:
+        {
+            "agent": str,
+            "state": str,
+            "actions": list,  # ALL valid actions for this state
+            "wait_for": str | None,
+            "message": str,
+        }
+    """
     agent = get_agent()
-    state = load_state()
-    whose_turn = state.get("whose_turn", "dev1")
+    model = load_model()
 
     result = {
         "agent": agent,
-        "phase": state.get("phase"),
-        "whose_turn": whose_turn,
-        "action": None,
+        "state": model.state,
+        "actions": [],  # List of ALL valid actions
         "wait_for": None,
         "message": ""
     }
 
-    if state.get("phase") != "hunks":
-        # Not started yet - tell dev1 to start
+    if not model.filepath:
         if agent == "dev1":
-            result["action"] = "ralph merge start"
+            result["actions"] = ["ralph merge start"]
             result["message"] = "Start hunk-by-hunk merge"
         else:
             result["wait_for"] = "dev1"
             result["message"] = "Waiting for dev1 to start merge"
         return result
 
-    if whose_turn != agent:
-        result["wait_for"] = whose_turn
-        result["message"] = f"Waiting for {whose_turn}"
+    if model.state == "COMPLETE":
+        result["message"] = "Both approved - advance to next hunk"
         return result
 
-    hunk_files = state.get("hunk_files", [])
-    idx = state.get("current_file_index", 0)
-
-    if idx >= len(hunk_files):
-        result["action"] = "ralph merge finalize"
-        result["message"] = "All resolved - finalize"
-        return result
-
-    fs = hunk_files[idx]
-    filepath = fs.get("filepath", "unknown")
-    current_proposal = fs.get("current_proposal")
-    agreed = fs.get("agreed", {})
-    my_agreed = agreed.get(agent, False)
-
-    if current_proposal:
-        if my_agreed:
-            # I already agreed, waiting for other
-            other = "dev2" if agent == "dev1" else "dev1"
-            result["wait_for"] = other
-            result["message"] = f"You agreed. Waiting for {other} to agree on {filepath}"
-        else:
-            # There's a proposal I haven't agreed to yet
-            result["action"] = "ralph merge show"
-            result["message"] = f"Review proposal for {filepath} - agree, comment, or propose alternative"
+    if model.is_my_turn():
+        result["actions"] = model.get_actions()
+        result["message"] = f"Your turn: {model.state}"
     else:
-        # No proposal yet
-        result["action"] = "ralph merge show"
-        result["message"] = f"View {filepath} - propose resolution or comment"
+        result["wait_for"] = model.get_turn()
+        result["message"] = f"Waiting for {result['wait_for']}"
 
     return result

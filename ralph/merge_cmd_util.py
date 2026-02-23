@@ -11,7 +11,7 @@ from pathlib import Path
 
 from merge_state import (
     COORD_DIR, get_agent, get_state_file, get_base_branch_from_git,
-    load_agent_state, load_state, save_state
+    load_agent_state, load_state, save_state, read_turn
 )
 from merge_git import get_branch_info
 
@@ -23,7 +23,7 @@ def cmd_status():
 
     print(f"Phase: {state.get('phase', 'idle')}")
     print(f"Current file: {state.get('current_file', 'none')}")
-    print(f"Turn: {state.get('whose_turn', 'dev1')}")
+    print(f"Turn: {read_turn()}")
     print(f"You are: {agent}")
     print()
 
@@ -47,16 +47,18 @@ def cmd_status():
 
 
 def cmd_reset():
-    """Clear all merge state on BOTH machines, including ralph-mode flags."""
+    """Clear all merge state on BOTH machines, including ralph-mode flags and staging."""
     base_branch = get_base_branch_from_git()
     safe_branch = base_branch.replace("/", "-")
 
     ralph_flag = str(Path.home() / ".claude" / ".ralph-mode")
+    staging_dir = Path.home() / ".claude" / "merge-staging"
 
     files_to_clear = [
         str(COORD_DIR / "messages.txt"),
         str(COORD_DIR / f"merge-state-{safe_branch}-dev1.json"),
         str(COORD_DIR / f"merge-state-{safe_branch}-dev2.json"),
+        str(COORD_DIR / f"hunk-state-{safe_branch}.json"),  # State machine state
         ralph_flag,
     ]
 
@@ -67,14 +69,21 @@ def cmd_reset():
             p.unlink()
             print(f"   Deleted: {p.name}")
 
+    # Clear staging directory
+    if staging_dir.exists():
+        import shutil
+        shutil.rmtree(staging_dir)
+        print(f"   Deleted: merge-staging/")
+
     print("Clearing remote state (dev2)...")
-    remote_cmd = f"rm -f {' '.join(files_to_clear)}"
+    remote_staging = "~/.claude/merge-staging"
+    remote_cmd = f"rm -f {' '.join(files_to_clear)} && rm -rf {remote_staging}"
     result = subprocess.run(
         ["ssh", "carlos@192.168.1.104", remote_cmd],
         capture_output=True, text=True
     )
     if result.returncode == 0:
-        print("   Remote cleared")
+        print("   Remote cleared (including staging)")
     else:
         print(f"   Remote clear failed: {result.stderr.strip()}")
 
@@ -115,6 +124,13 @@ def cmd_wait(seconds: int = 10) -> dict:
         result = cmd_next_action()
 
     result["waited"] = seconds
+
+    # Always show next action so agent knows what to do
+    if result.get("action"):
+        print(f">>> NEXT: {result['action']}")
+    elif result.get("wait_for"):
+        print(f">>> WAIT: Still waiting for {result['wait_for']}")
+
     return result
 
 
@@ -124,7 +140,7 @@ def cmd_next_action() -> dict:
     state = load_state()
     phase = state.get("phase", "idle")
     current_file = state.get("current_file")
-    whose_turn = state.get("whose_turn", "dev1")
+    whose_turn = read_turn()
 
     result = {
         "agent": agent,
