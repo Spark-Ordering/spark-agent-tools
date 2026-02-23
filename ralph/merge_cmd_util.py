@@ -10,40 +10,35 @@ import time
 from pathlib import Path
 
 from merge_state import (
-    COORD_DIR, get_agent, get_state_file, get_base_branch_from_git,
-    load_agent_state, load_state, save_state, read_turn
+    COORD_DIR, get_agent, get_state_file, get_base_branch_from_git
 )
 from merge_git import get_branch_info
+from merge_file_state import load_model
+from merge_file_review import cmd_next_action as file_next_action
 
 
 def cmd_status():
-    """Show current merge status."""
-    state = load_state()
+    """Show current merge status using file-level merge state."""
+    model = load_model()
     agent = get_agent()
 
-    print(f"Phase: {state.get('phase', 'idle')}")
-    print(f"Current file: {state.get('current_file', 'none')}")
-    print(f"Turn: {read_turn()}")
+    print(f"State: {model.state}")
+    print(f"Current file: {model.current_file or 'none'}")
+    print(f"Turn: {model.get_turn()}")
     print(f"You are: {agent}")
     print()
 
-    files = state.get("files", {})
-    if not files:
+    if not model.all_files:
         print("No files tracked.")
         return
 
-    approved = sum(1 for f in files.values() if f.get("status") == "approved")
-    resolved = sum(1 for f in files.values() if f.get("resolved"))
-    print(f"Progress: {approved}/{len(files)} approved, {resolved}/{len(files)} resolved\n")
+    print(f"Progress: {model.file_index}/{len(model.all_files)} files\n")
 
-    for path, info in files.items():
-        status = info.get("status", "pending")
-        res = info.get("resolved", False)
-        icon = "R" if res else ("A" if status == "approved" else ("P" if status == "proposed" else "-"))
-        current = " <--" if path == state.get("current_file") else ""
-        discussed = info.get("discussed_by", [])
-        print(f"[{icon}] {path}{current}")
-        print(f"    discussed: {discussed}, votes: {info.get('votes', {})}")
+    for i, filepath in enumerate(model.all_files):
+        is_current = filepath == model.current_file
+        is_done = i < model.file_index
+        icon = "✓" if is_done else ("→" if is_current else " ")
+        print(f"[{icon}] {filepath}")
 
 
 def cmd_reset():
@@ -58,7 +53,7 @@ def cmd_reset():
         str(COORD_DIR / "messages.txt"),
         str(COORD_DIR / f"merge-state-{safe_branch}-dev1.json"),
         str(COORD_DIR / f"merge-state-{safe_branch}-dev2.json"),
-        str(COORD_DIR / f"hunk-state-{safe_branch}.json"),  # State machine state
+        str(COORD_DIR / f"file-merge-state-{safe_branch}.json"),  # File-level merge state
         ralph_flag,
     ]
 
@@ -113,17 +108,23 @@ def cmd_complete():
 
 def cmd_wait(seconds: int = 10) -> dict:
     """Wait the full time, then check what to do next."""
-    from merge_hunk_nav import cmd_hunk_next_action
-
     time.sleep(seconds)
 
-    state = load_state()
-    if state.get("phase") == "hunks":
-        result = cmd_hunk_next_action()
-    else:
-        result = cmd_next_action()
+    # Use file-level merge state machine
+    model = load_model()
+    result = file_next_action()
 
-    result["waited"] = seconds
+    # Convert to expected format
+    result = {
+        "agent": result.get("agent"),
+        "phase": result.get("state"),
+        "current_file": model.current_file,
+        "whose_turn": model.get_turn(),
+        "action": result.get("actions", [None])[0] if result.get("actions") else None,
+        "wait_for": result.get("wait_for"),
+        "message": result.get("message", ""),
+        "waited": seconds,
+    }
 
     # Always show next action so agent knows what to do
     if result.get("action"):
@@ -134,123 +135,3 @@ def cmd_wait(seconds: int = 10) -> dict:
     return result
 
 
-def cmd_next_action() -> dict:
-    """TURN-ENFORCED next action - the core state machine."""
-    agent = get_agent()
-    state = load_state()
-    phase = state.get("phase", "idle")
-    current_file = state.get("current_file")
-    whose_turn = read_turn()
-
-    result = {
-        "agent": agent,
-        "phase": phase,
-        "current_file": current_file,
-        "whose_turn": whose_turn,
-        "action": None,
-        "wait_for": None,
-        "message": ""
-    }
-
-    # GLOBAL TURN CHECK - dev1 ALWAYS goes first in idle/started phases
-    if phase in ("idle", "started") and agent == "dev2":
-        dev1_state = load_agent_state("dev1")
-        if dev1_state.get("phase", "idle") not in ("review", "applying", "resolved", "clean", "merged"):
-            result["wait_for"] = "dev1"
-            result["message"] = "Waiting for dev1 to start merge first. Use 'ralph merge wait' to poll (do NOT write your own loop)."
-            return result
-
-    # TURN CHECK for review phase
-    if phase == "review" and whose_turn != agent:
-        result["wait_for"] = whose_turn
-        result["message"] = f"Not your turn. Waiting for {whose_turn}. Use 'ralph merge wait' to poll (do NOT write your own loop)."
-        return result
-
-    if phase == "idle":
-        result["action"] = "ralph merge start"
-        result["message"] = "Start merge phase"
-        return result
-
-    if phase == "started":
-        result["action"] = "ralph merge check"
-        result["message"] = "Check for conflicts"
-        return result
-
-    if phase == "clean":
-        result["action"] = "ralph merge execute"
-        result["message"] = "No conflicts - execute merge"
-        return result
-
-    if phase == "merged":
-        result["action"] = "ralph merge complete"
-        result["message"] = "Cleanup"
-        return result
-
-    # === APPLYING PHASE - iterate through files ===
-    if phase == "applying":
-        if current_file:
-            file_state = state["files"].get(current_file, {})
-            if not file_state.get("resolved"):
-                result["action"] = "ralph merge show-resolution"
-                result["message"] = f"Apply resolution to: {current_file}"
-                return result
-
-        # All files resolved or no current file
-        all_resolved = all(f.get("resolved") for f in state.get("files", {}).values())
-        if all_resolved:
-            result["action"] = "ralph merge finalize"
-            result["message"] = "All files resolved - finalize merge"
-        else:
-            # Find next unresolved
-            for f, info in state.get("files", {}).items():
-                if not info.get("resolved"):
-                    result["action"] = "ralph merge show-resolution"
-                    result["current_file"] = f
-                    result["message"] = f"Apply resolution to: {f}"
-                    break
-        return result
-
-    if phase == "resolved":
-        result["action"] = "ralph merge finalize"
-        result["message"] = "All files resolved - finalize merge"
-        return result
-
-    # === REVIEW PHASE - discussion workflow ===
-    if not current_file:
-        files = state.get("files", {})
-        all_approved = all(f.get("status") == "approved" for f in files.values())
-        if all_approved and files:
-            result["action"] = "ralph merge apply"
-            result["message"] = "All files approved - start applying resolutions"
-        else:
-            result["action"] = "ralph merge check"
-            result["message"] = "No current file"
-        return result
-
-    file_state = state["files"].get(current_file, {})
-    discussed_by = file_state.get("discussed_by", [])
-    proposal = file_state.get("proposal")
-    votes = file_state.get("votes", {})
-    other = "dev2" if agent == "dev1" else "dev1"
-
-    # Haven't discussed yet
-    if agent not in discussed_by:
-        result["action"] = f'ralph merge discuss "<your analysis of {current_file}>"'
-        result["message"] = f"Discuss {current_file}"
-        return result
-
-    # Both discussed, no proposal - I should propose
-    if len(discussed_by) >= 2 and not proposal:
-        result["action"] = f'ralph merge propose "<resolution for {current_file}>"'
-        result["message"] = "Both discussed - propose resolution"
-        return result
-
-    # Proposal exists, I haven't voted
-    if proposal and not votes.get(agent):
-        result["action"] = "ralph merge vote approve"
-        result["message"] = f"Vote on proposal: {proposal[:50]}"
-        return result
-
-    result["action"] = "ralph merge show"
-    result["message"] = "Show current file"
-    return result

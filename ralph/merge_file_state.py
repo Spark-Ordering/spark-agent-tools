@@ -223,7 +223,7 @@ def load_model() -> FileMergeModel:
 
 def get_file_versions(filepath: str) -> dict:
     """Get base, dev1, dev2 content for a file."""
-    from merge_hunks import get_branch_info
+    from merge_git import get_branch_info
 
     current, base, other = get_branch_info()
 
@@ -268,7 +268,7 @@ def get_staging_path(filepath: str) -> Path:
 
 def get_conflicting_files() -> List[str]:
     """Get list of files that differ between dev1 and dev2."""
-    from merge_hunks import get_branch_info
+    from merge_git import get_branch_info
 
     current, base, other = get_branch_info()
 
