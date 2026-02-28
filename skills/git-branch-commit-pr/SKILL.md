@@ -6,20 +6,24 @@ description: |
   work, (4) user says "commit", "push", "create PR", or "ship it". Covers branch naming,
   commit message rules (no Claude credit), and PR title format with JIRA ticket numbers.
 author: Carlos Borde
-version: 1.0.0
+version: 1.1.0
 date: 2026-02-28
 ---
 
 # SparkPos Git Workflow
 
-## Problem
-Consistent git workflow conventions for branching, committing, and creating PRs in SparkPos.
+## When This Skill is Invoked: JUST DO IT
 
-## Context / Trigger Conditions
-- User asks to commit and push code
-- User asks to create a PR
-- Starting new work that needs a branch
-- User says "commit", "push", "create PR", "ship it"
+When the user invokes this skill, DO NOT ask what to do. Assess the current state and
+execute the full workflow automatically:
+
+1. Run `git status`, `git diff --stat`, `git branch --show-current`, `git log --oneline -5`
+2. If there are uncommitted changes: stage specific files, commit, push
+3. If everything is committed and pushed: create a PR
+4. If already committed but not pushed: push, then create PR
+5. Extract the JIRA ticket number from the branch name if present
+
+The user expects you to figure out what step you're on and do the right thing.
 
 ## Branch Naming
 
@@ -46,18 +50,7 @@ cborde/menu-editor-cleanup          (no ticket)
 2. **NEVER mention Claude, AI, or assistants** in commit messages
 3. Write concise commit messages that describe the change
 4. Use conventional commit format when appropriate: `feat(scope): message`, `fix(scope): message`
-
-Example commit:
-```bash
-git commit -m "$(cat <<'EOF'
-feat(menu-settings): compact layout with scrollable version table
-
-- Replace verbose card layout with side-by-side buttons
-- Extract MenuVersionTable as separate component
-- FlatList-based scrollable version rows
-EOF
-)"
-```
+5. Always stage specific files, not `git add -A` or `git add .`
 
 ## PR Creation
 
@@ -66,7 +59,7 @@ EOF
    - If no ticket: just the description
 2. **NEVER mention Claude, AI, or assistants** anywhere in the PR (title, body, comments)
 3. **Do NOT include** the "Generated with Claude Code" footer
-4. Body format:
+4. Body uses this format (no Claude attribution):
 ```bash
 gh pr create --title "ENG-2061: Add version picker" --body "$(cat <<'EOF'
 ## Summary
@@ -81,29 +74,3 @@ gh pr create --title "ENG-2061: Add version picker" --body "$(cat <<'EOF'
 EOF
 )"
 ```
-
-## Full Workflow Example
-
-```bash
-# 1. Check current branch
-git branch --show-current
-
-# 2. If on main/develop/unrelated, create branch
-git checkout -b cborde/ENG-2061/add-version-picker
-
-# 3. Stage and commit (NO Co-Authored-By)
-git add src/components/views/SettingsView/pages/MenuVersionTable.tsx
-git add src/components/views/SettingsView/pages/MenuSettingsPage.tsx
-git commit -m "feat(menu-settings): add scrollable version table"
-
-# 4. Push
-git push -u origin cborde/ENG-2061/add-version-picker
-
-# 5. Create PR (NO Claude mentions)
-gh pr create --title "ENG-2061: Add scrollable version table" --body "..."
-```
-
-## Notes
-- The user handles all git commits themselves most of the time — only commit when explicitly asked
-- Always stage specific files, not `git add -A` or `git add .`
-- Check `git status` and `git diff` before committing to understand what's changing
