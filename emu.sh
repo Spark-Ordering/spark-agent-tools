@@ -29,6 +29,11 @@ UI_MAP="$SCRIPT_DIR/sparkpos-ui-map.json"
 # Default package - use dev variant since that's what we run 99% of the time
 DEFAULT_PKG="com.starter.paddev"
 
+# Scroll defaults
+SCROLL_DISTANCE=300    # screenshot pixels
+SCROLL_DURATION=500    # milliseconds
+SWIPE_DURATION=300     # milliseconds (for raw swipe command)
+
 # Find the emulator device (prefer emulator over physical device)
 get_device() {
     local devices=$(adb devices | grep -v "List of devices" | grep -v "^$")
@@ -93,7 +98,7 @@ case "$1" in
             echo "Usage: emu.sh swipe <x1> <y1> <x2> <y2> [duration_ms]"
             exit 1
         fi
-        duration="${6:-300}"
+        duration="${6:-$SWIPE_DURATION}"
         $ADB shell input swipe "$2" "$3" "$4" "$5" "$duration"
         echo "Swiped from ($2,$3) to ($4,$5)"
         ;;
@@ -194,8 +199,8 @@ case "$1" in
         $ADB shell am force-stop "$PKG" 2>/dev/null
         sleep 1
         $ADB shell am start -n "$PKG/$ACT"
-        echo "Waiting for app to load (up to 90s)..."
-        for i in $(seq 1 18); do
+        echo "Waiting for app to load (up to 45s)..."
+        for i in $(seq 1 9); do
             sleep 5
             # Check if app process is running
             if $ADB shell pidof "$PKG" >/dev/null 2>&1; then
@@ -208,7 +213,7 @@ case "$1" in
                     break
                 fi
             fi
-            echo "  ...waiting (${i}0s / 90s)"
+            echo "  ...waiting (${i}0s / 45s)"
         done
         echo "App started. Use 'emu.sh shot' to check screen."
         ;;
@@ -970,6 +975,85 @@ case "$1" in
         fi
         ;;
 
+    mark)
+        # Draw red dots on screenshot to visualize tap/swipe coordinates
+        # Coordinates are in SCREENSHOT space (max 2000px)
+        # Usage: emu.sh mark <x1> <y1> [x2 y2 ...] [--swipe]
+        #   --swipe: draw a line between first and second point
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo "Usage: emu.sh mark <x1> <y1> [x2 y2 ...] [--swipe]"
+            echo "  Draws red dots on /tmp/screen.png at given coordinates"
+            echo "  Coordinates are in screenshot space (max 2000px)"
+            echo "  --swipe: also draw an arrow between first two points"
+            echo "  Output: /tmp/screen_marked.png"
+            exit 1
+        fi
+        if [ ! -f /tmp/screen.png ]; then
+            echo "Error: /tmp/screen.png not found. Run 'emu.sh shot' first."
+            exit 1
+        fi
+        # Collect points and check for --swipe flag
+        DRAW_SWIPE=false
+        POINTS=()
+        shift  # remove 'mark'
+        while [ $# -gt 0 ]; do
+            if [ "$1" = "--swipe" ]; then
+                DRAW_SWIPE=true
+                shift
+            else
+                POINTS+=("$1")
+                shift
+            fi
+        done
+        # Build magick draw commands
+        DRAW_ARGS=""
+        i=0
+        while [ $i -lt ${#POINTS[@]} ]; do
+            x="${POINTS[$i]}"
+            y="${POINTS[$((i+1))]}"
+            if [ -n "$x" ] && [ -n "$y" ]; then
+                DRAW_ARGS="$DRAW_ARGS -fill red -stroke white -strokewidth 2 -draw \"circle $x,$y $((x+12)),$y\""
+                DRAW_ARGS="$DRAW_ARGS -fill white -pointsize 16 -stroke none -draw \"text $((x+16)),$((y+5)) '($x,$y)'\""
+            fi
+            i=$((i + 2))
+        done
+        # Draw swipe arrow between first two points
+        if $DRAW_SWIPE && [ ${#POINTS[@]} -ge 4 ]; then
+            x1="${POINTS[0]}"
+            y1="${POINTS[1]}"
+            x2="${POINTS[2]}"
+            y2="${POINTS[3]}"
+            DRAW_ARGS="$DRAW_ARGS -stroke red -strokewidth 3 -draw \"line $x1,$y1 $x2,$y2\""
+            # Arrowhead
+            DRAW_ARGS="$DRAW_ARGS -fill red -stroke red -strokewidth 2 -draw \"circle $x2,$y2 $((x2+8)),$y2\""
+        fi
+        eval magick /tmp/screen.png $DRAW_ARGS /tmp/screen_marked.png
+        echo "/tmp/screen_marked.png"
+        ;;
+
+    to-device)
+        # Convert screenshot coordinates to device coordinates
+        # Screenshot is max 2000px, device is 2560x1600
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo "Usage: emu.sh to-device <screenshot_x> <screenshot_y>"
+            exit 1
+        fi
+        # Get actual screenshot dimensions
+        if [ ! -f /tmp/screen.png ]; then
+            echo "Error: /tmp/screen.png not found. Run 'emu.sh shot' first."
+            exit 1
+        fi
+        SHOT_W=$(sips -g pixelWidth /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        SHOT_H=$(sips -g pixelHeight /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        DEV_SIZE=$($ADB shell wm size 2>/dev/null | grep -o '[0-9]*x[0-9]*')
+        DEV_W=$(echo "$DEV_SIZE" | cut -dx -f1)
+        DEV_H=$(echo "$DEV_SIZE" | cut -dx -f2)
+        # Scale
+        DX=$(python3 -c "print(int($2 * $DEV_W / $SHOT_W))")
+        DY=$(python3 -c "print(int($3 * $DEV_H / $SHOT_H))")
+        echo "$DX $DY"
+        ;;
+
     scroll-down)
         # Scroll down at optional x,y coordinates (default: screen center)
         CX="${2:-1280}"
@@ -977,7 +1061,7 @@ case "$1" in
         START_Y=$((CY + 200))
         END_Y=$((CY - 200))
         echo "Scrolling down at ($CX, $CY)"
-        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" 300
+        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" "$SCROLL_DURATION"
         ;;
 
     scroll-up)
@@ -987,7 +1071,7 @@ case "$1" in
         START_Y=$((CY - 200))
         END_Y=$((CY + 200))
         echo "Scrolling up at ($CX, $CY)"
-        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" 300
+        $ADB shell input swipe "$CX" "$START_Y" "$CX" "$END_Y" "$SCROLL_DURATION"
         ;;
 
     scroll-left)
@@ -997,7 +1081,7 @@ case "$1" in
         START_X=$((CX + 200))
         END_X=$((CX - 200))
         echo "Scrolling left at ($CX, $CY)"
-        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" 300
+        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" "$SCROLL_DURATION"
         ;;
 
     scroll-right)
@@ -1007,7 +1091,63 @@ case "$1" in
         START_X=$((CX - 200))
         END_X=$((CX + 200))
         echo "Scrolling right at ($CX, $CY)"
-        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" 300
+        $ADB shell input swipe "$START_X" "$CY" "$END_X" "$CY" "$SCROLL_DURATION"
+        ;;
+
+    sd)
+        # Scroll down using SCREENSHOT coordinates (auto-scales to device pixels)
+        # Usage: emu.sh sd <screenshot_x> <screenshot_y> [distance]
+        # distance = scroll distance in screenshot pixels (default: SCROLL_DISTANCE)
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo "Usage: emu.sh sd <screenshot_x> <screenshot_y> [distance]"
+            echo "  Scroll down at screenshot coordinates (auto-scales to device pixels)"
+            echo "  distance: scroll distance in screenshot pixels (default: $SCROLL_DISTANCE)"
+            exit 1
+        fi
+        if [ ! -f /tmp/screen.png ]; then
+            echo "Error: /tmp/screen.png not found. Run 'emu.sh shot' first."
+            exit 1
+        fi
+        SHOT_W=$(sips -g pixelWidth /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        SHOT_H=$(sips -g pixelHeight /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        DEV_SIZE=$($ADB shell wm size 2>/dev/null | grep -o '[0-9]*x[0-9]*')
+        DEV_W=$(echo "$DEV_SIZE" | cut -dx -f1)
+        DEV_H=$(echo "$DEV_SIZE" | cut -dx -f2)
+        DIST="${4:-$SCROLL_DISTANCE}"
+        # Convert screenshot coords to device coords
+        DX=$(python3 -c "print(int($2 * $DEV_W / $SHOT_W))")
+        DY=$(python3 -c "print(int($3 * $DEV_H / $SHOT_H))")
+        DD=$(python3 -c "print(int($DIST * $DEV_H / $SHOT_H))")
+        START_Y=$((DY + DD / 2))
+        END_Y=$((DY - DD / 2))
+        echo "Scroll down: screenshot ($2,$3) → device ($DX,$DY), distance=$DD"
+        $ADB shell input swipe "$DX" "$START_Y" "$DX" "$END_Y" "$SCROLL_DURATION"
+        ;;
+
+    su)
+        # Scroll up using SCREENSHOT coordinates (auto-scales to device pixels)
+        if [ -z "$2" ] || [ -z "$3" ]; then
+            echo "Usage: emu.sh su <screenshot_x> <screenshot_y> [distance]"
+            echo "  Scroll up at screenshot coordinates (auto-scales to device pixels)"
+            exit 1
+        fi
+        if [ ! -f /tmp/screen.png ]; then
+            echo "Error: /tmp/screen.png not found. Run 'emu.sh shot' first."
+            exit 1
+        fi
+        SHOT_W=$(sips -g pixelWidth /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        SHOT_H=$(sips -g pixelHeight /tmp/screen.png 2>/dev/null | tail -1 | awk '{print $2}')
+        DEV_SIZE=$($ADB shell wm size 2>/dev/null | grep -o '[0-9]*x[0-9]*')
+        DEV_W=$(echo "$DEV_SIZE" | cut -dx -f1)
+        DEV_H=$(echo "$DEV_SIZE" | cut -dx -f2)
+        DIST="${4:-$SCROLL_DISTANCE}"
+        DX=$(python3 -c "print(int($2 * $DEV_W / $SHOT_W))")
+        DY=$(python3 -c "print(int($3 * $DEV_H / $SHOT_H))")
+        DD=$(python3 -c "print(int($DIST * $DEV_H / $SHOT_H))")
+        START_Y=$((DY - DD / 2))
+        END_Y=$((DY + DD / 2))
+        echo "Scroll up: screenshot ($2,$3) → device ($DX,$DY), distance=$DD"
+        $ADB shell input swipe "$DX" "$START_Y" "$DX" "$END_Y" "$SCROLL_DURATION"
         ;;
 
     *)
@@ -1036,7 +1176,7 @@ case "$1" in
         echo "  clean                   - Remove temp files"
         echo ""
         echo "App lifecycle:"
-        echo "  start [pkg]             - Start app and wait for load (up to 90s)"
+        echo "  start [pkg]             - Start app and wait for load (up to 45s)"
         echo "  stop [pkg]              - Force stop app"
         echo "  restart [pkg]           - Stop + start"
         echo "  alive [pkg]             - Check if app is running"
@@ -1060,9 +1200,15 @@ case "$1" in
         echo "  clear-db                - Clear PowerSync database (force fresh sync)"
         echo ""
         echo "Scrolling:"
-        echo "  scroll-down [x] [y]     - Scroll down at center or specified coordinates"
-        echo "  scroll-up [x] [y]       - Scroll up at center or specified coordinates"
-        echo "  scroll-left [x] [y]     - Scroll left at center or specified coordinates"
-        echo "  scroll-right [x] [y]    - Scroll right at center or specified coordinates"
+        echo "  scroll-down [x] [y]     - Scroll down (device coordinates)"
+        echo "  scroll-up [x] [y]       - Scroll up (device coordinates)"
+        echo "  scroll-left [x] [y]     - Scroll left (device coordinates)"
+        echo "  scroll-right [x] [y]    - Scroll right (device coordinates)"
+        echo "  sd <x> <y> [dist]       - Scroll down (screenshot coordinates, auto-scales)"
+        echo "  su <x> <y> [dist]       - Scroll up (screenshot coordinates, auto-scales)"
+        echo ""
+        echo "Debug:"
+        echo "  mark <x1> <y1> [x2 y2..] [--swipe] - Draw red dots on screenshot"
+        echo "  to-device <x> <y>       - Convert screenshot coords to device coords"
         ;;
 esac
