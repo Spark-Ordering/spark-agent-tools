@@ -2,14 +2,15 @@
 """
 File-level merge review commands.
 
-Commands:
-- ralph merge show           # Status: current file, what's been seen, state
-- ralph merge show base      # Full base content, marks seen_base=true
-- ralph merge show dev1      # Full dev1 content, marks seen_dev1=true
-- ralph merge show dev2      # Full dev2 content, marks seen_dev2=true
-- ralph merge show staging   # Full staging content (if exists)
-- ralph merge propose '<comment>'  # Propose staging file as resolution
-- ralph merge approve        # Approve current proposal
+Commands trigger state machine transitions:
+- ralph merge start           # Trigger: begin()
+- ralph merge show           # Display status
+- ralph merge show base      # Show base content, mark seen
+- ralph merge show dev1      # Show dev1 content, mark seen
+- ralph merge show dev2      # Show dev2 content, mark seen
+- ralph merge show staging   # Show staging content, mark seen
+- ralph merge propose '<filepath>' '<comment>'  # Trigger: dev1_propose/dev2_propose
+- ralph merge approve        # Trigger: dev1_approve/dev2_approve
 """
 
 import subprocess
@@ -24,15 +25,10 @@ from merge_file_state import (
 )
 
 
-def cmd_show(variant: str = None):
+def cmd_show():
     """
-    Show file content or status.
-
-    variant=None: Show status (current file, seen flags, state)
-    variant='base': Show base content, mark seen
-    variant='dev1': Show dev1 content, mark seen
-    variant='dev2': Show dev2 content, mark seen
-    variant='staging': Show staging content
+    Show ALL versions of the current file (base, dev1, dev2, and staging if exists).
+    Marks the agent as having seen the file, enabling propose/approve.
     """
     model = load_model()
     agent = get_agent()
@@ -43,169 +39,105 @@ def cmd_show(variant: str = None):
 
     if model.state == "DONE":
         print("Merge complete! All files resolved.")
+        print("Run: ralph merge finalize")
         return
 
     if not model.current_file:
-        print("No current file. Run: ralph merge next")
+        print("No current file set.")
         return
 
-    if variant is None:
-        _show_status(model, agent)
-    elif variant == "base":
-        _show_version(model, agent, "base")
-    elif variant == "dev1":
-        _show_version(model, agent, "dev1")
-    elif variant == "dev2":
-        _show_version(model, agent, "dev2")
-    elif variant == "staging":
-        _show_staging(model, agent)
-    else:
-        print(f"Unknown variant: {variant}")
-        print("Usage: ralph merge show [base|dev1|dev2|staging]")
-
-
-def _show_status(model: FileMergeModel, agent: str):
-    """Show current merge status."""
-    print("=" * 60)
-    print(f"FILE: {model.current_file}")
-    print(f"Progress: {model.file_index + 1}/{len(model.all_files)}")
-    print(f"State: {model.state}")
-    print("=" * 60)
-    print()
-
-    # Show seen flags for this agent
-    if agent == "dev1":
-        base_seen = "✓" if model.dev1_seen_base else "✗"
-        dev1_seen = "✓" if model.dev1_seen_dev1 else "✗"
-        dev2_seen = "✓" if model.dev1_seen_dev2 else "✗"
-    else:
-        base_seen = "✓" if model.dev2_seen_base else "✗"
-        dev1_seen = "✓" if model.dev2_seen_dev1 else "✗"
-        dev2_seen = "✓" if model.dev2_seen_dev2 else "✗"
-
-    print(f"Your seen flags ({agent}):")
-    print(f"  {base_seen} base  - ralph merge show base")
-    print(f"  {dev1_seen} dev1  - ralph merge show dev1")
-    print(f"  {dev2_seen} dev2  - ralph merge show dev2")
-    print()
-
-    has_seen_all = model.has_seen_all(agent)
-    if has_seen_all:
-        print("✓ You have seen all versions. You can propose or approve.")
-    else:
-        print("✗ You must see all versions before proposing or approving.")
-    print()
-
-    # Show proposal status
-    if model.state == "PROPOSAL_PENDING":
-        print(f"PROPOSAL by {model.proposed_by}:")
-        print(f"  Comment: \"{model.proposal_comment}\"")
-        print(f"  dev1 approved: {'✓' if model.dev1_approved else '✗'}")
-        print(f"  dev2 approved: {'✓' if model.dev2_approved else '✗'}")
-        print()
-        print("View staging: ralph merge show staging")
-        if model.is_my_turn():
-            print("To approve: ralph merge approve")
-    elif model.state == "REVIEWING":
-        print("No proposal yet.")
-        if has_seen_all:
-            print("To propose: Write staging file, then: ralph merge propose '<comment>'")
-        else:
-            print("Read all versions first, then write staging and propose.")
-
-    print()
-    print("=" * 60)
-
-
-def _show_version(model: FileMergeModel, agent: str, which: str):
-    """Show a specific version (base, dev1, or dev2) and mark as seen."""
     filepath = model.current_file
 
+    # Get all versions
     try:
         versions = get_file_versions(filepath)
-        content = versions.get(which, "")
-
-        if not content:
-            print(f"No content for {which} version of {filepath}")
-            return
-
-        print("=" * 60)
-        print(f"{which.upper()} VERSION: {filepath}")
-        print("=" * 60)
-        print()
-        print(content)
-        print()
-        print("=" * 60)
-
-        # Mark as seen
-        model.mark_seen(agent, which)
-        save_model(model)
-
-        print(f"✓ Marked {which} as seen for {agent}")
-
-        # Show remaining
-        if agent == "dev1":
-            remaining = []
-            if not model.dev1_seen_base:
-                remaining.append("base")
-            if not model.dev1_seen_dev1:
-                remaining.append("dev1")
-            if not model.dev1_seen_dev2:
-                remaining.append("dev2")
-        else:
-            remaining = []
-            if not model.dev2_seen_base:
-                remaining.append("base")
-            if not model.dev2_seen_dev1:
-                remaining.append("dev1")
-            if not model.dev2_seen_dev2:
-                remaining.append("dev2")
-
-        if remaining:
-            print(f"Still need to see: {', '.join(remaining)}")
-        else:
-            print("✓ You have seen all versions. Ready to propose or approve.")
-
     except Exception as e:
-        print(f"Error getting {which} version: {e}")
-
-
-def _show_staging(model: FileMergeModel, agent: str):
-    """Show the current staging file content."""
-    filepath = model.current_file
-    staging_path = get_staging_path(filepath)
-
-    if not staging_path.exists():
-        print(f"No staging file exists yet for {filepath}")
-        print(f"Write your resolved version to: {staging_path}")
+        print(f"Error getting file versions: {e}")
         return
 
-    content = staging_path.read_text()
+    # Show header
+    print("=" * 70)
+    print(f"FILE: {filepath}")
+    print(f"Progress: {model.file_index + 1}/{len(model.all_files)}")
+    print(f"State: {model.state}")
+    print("=" * 70)
 
-    print("=" * 60)
-    print(f"STAGING: {filepath}")
-    print(f"Path: {staging_path}")
-    print("=" * 60)
+    # Show BASE version
     print()
-    print(content)
+    print(">>> BASE VERSION (common ancestor):")
+    print("-" * 70)
+    base_content = versions.get("base", "")
+    if base_content:
+        print(base_content)
+    else:
+        print("(no base content)")
     print()
-    print("=" * 60)
 
-    # Mark that this agent has seen the current staging/proposal
-    model.mark_seen(agent, "staging")
+    # Show DEV1 version
+    print(">>> DEV1 VERSION:")
+    print("-" * 70)
+    dev1_content = versions.get("dev1", "")
+    if dev1_content:
+        print(dev1_content)
+    else:
+        print("(no dev1 content)")
+    print()
+
+    # Show DEV2 version
+    print(">>> DEV2 VERSION:")
+    print("-" * 70)
+    dev2_content = versions.get("dev2", "")
+    if dev2_content:
+        print(dev2_content)
+    else:
+        print("(no dev2 content)")
+    print()
+
+    # Show STAGING if it exists
+    staging_path = get_staging_path(filepath)
+    if staging_path.exists():
+        print(">>> STAGING (proposed resolution):")
+        print(f"    Proposed by: {model.proposed_by or 'unknown'}")
+        print(f"    Comment: {model.proposal_comment or 'none'}")
+        print("-" * 70)
+        print(staging_path.read_text())
+        print()
+
+    # Mark as seen
+    model.mark_seen(agent)
     save_model(model)
 
+    print("=" * 70)
+    print(f"✓ {agent} has seen all versions.")
+
     # ADVOCACY INSTRUCTIONS - show when reviewing other agent's proposal
-    if model.proposal_comment and model.proposed_by != agent:
-        print("")
-        print("\u26a0\ufe0f  ADVOCACY CHECK:")
+    if model.proposed_by and model.proposed_by != agent:
+        print()
+        print("⚠️  ADVOCACY CHECK:")
         print(f"   You are {agent}. This proposal is from {model.proposed_by}.")
         print("   ADVOCATE for your branch's work. If your files/exports are being")
         print("   excluded, COUNTER-PROPOSE. Don't approve deletion of your own work.")
 
+    # Show next action
+    print()
+    if model.is_my_turn():
+        if model.state == "NO_PROPOSAL_DEV1":
+            print("YOUR TURN: Write resolved file to staging, then propose:")
+            print(f"  ralph merge propose '{filepath}' '<your comment>'")
+        else:
+            print("YOUR TURN: Approve or counter-propose:")
+            print("  ralph merge approve")
+            print(f"  ralph merge propose '{filepath}' '<counter-comment>'")
+    else:
+        print(f"WAITING: {model.get_turn()}'s turn.")
+    print("=" * 70)
+
 
 def cmd_start():
-    """Start a new file-level merge session."""
+    """Start a new file-level merge session.
+
+    Triggers: begin() → CHECK_REMAINING → CHECKING_FILE → NO_PROPOSAL_DEV1
+    """
     model = load_model()
 
     if model.state not in ["INIT", "DONE"]:
@@ -225,31 +157,28 @@ def cmd_start():
         print(f"  {i}. {f}")
     print()
 
-    # Initialize model
+    # Initialize file list
     model.all_files = files
     model.file_index = 0
-    model.current_file = files[0]
-    model.state = "REVIEWING"
-    model.file_started_at = time.time()
-    model.reset_seen_for_file()
-    model.reset_approvals()
-    model.proposal_comment = None
-    model.proposed_by = None
+
+    # Trigger state machine: INIT → CHECK_REMAINING (auto-advances)
+    model.begin()
 
     save_model(model)
 
-    print(f"Starting with file 1/{len(files)}: {files[0]}")
+    if model.state == "DONE":
+        print("All files are identical - nothing to merge.")
+        return
+
     print()
-    print("Next steps:")
-    print("  1. ralph merge show base   - See base version")
-    print("  2. ralph merge show dev1   - See dev1 version")
-    print("  3. ralph merge show dev2   - See dev2 version")
-    print("  4. Write resolved file to staging")
-    print("  5. ralph merge propose '<comment>'")
+    print("Next: ralph merge show")
 
 
 def cmd_propose(filepath: str, comment: str):
-    """Propose the staging file as the resolution."""
+    """Propose the staging file as the resolution.
+
+    Triggers: dev1_propose or dev2_propose based on agent
+    """
     model = load_model()
     agent = get_agent()
 
@@ -279,25 +208,10 @@ def cmd_propose(filepath: str, comment: str):
         print("Use the current file path in your propose command.")
         return
 
-    # Validate seen all versions
-    if not model.has_seen_all(agent):
-        print("ERROR: You must see all 3 versions before proposing.")
-        print()
-        print("Run these commands first:")
-        if agent == "dev1":
-            if not model.dev1_seen_base:
-                print("  ralph merge show base")
-            if not model.dev1_seen_dev1:
-                print("  ralph merge show dev1")
-            if not model.dev1_seen_dev2:
-                print("  ralph merge show dev2")
-        else:
-            if not model.dev2_seen_base:
-                print("  ralph merge show base")
-            if not model.dev2_seen_dev1:
-                print("  ralph merge show dev1")
-            if not model.dev2_seen_dev2:
-                print("  ralph merge show dev2")
+    # Validate has run show
+    if not model.has_seen(agent):
+        print("ERROR: You must run 'ralph merge show' before proposing.")
+        print("Run: ralph merge show")
         return
 
     # Check staging file exists
@@ -317,20 +231,26 @@ def cmd_propose(filepath: str, comment: str):
     if '<<<<<<<' in content or '>>>>>>>' in content or '=======' in content:
         print("ERROR: Staging file contains conflict markers!")
         print("Write RESOLVED code without conflict markers.")
+        model.reject_markers()
+        save_model(model)
         return
 
-    # Check staging file was modified AFTER file started
+    # Check staging file was modified AFTER this agent ran 'show'
     file_mtime = staging_path.stat().st_mtime
-    file_started = model.file_started_at
+    last_show_at = model.dev1_last_show_at if agent == "dev1" else model.dev2_last_show_at
 
-    if file_mtime < file_started:
+    if last_show_at == 0.0:
+        print("ERROR: You must run 'ralph merge show' before proposing.")
+        return
+
+    if file_mtime < last_show_at:
         file_time_str = datetime.fromtimestamp(file_mtime).strftime('%H:%M:%S')
-        start_time_str = datetime.fromtimestamp(file_started).strftime('%H:%M:%S')
-        print("ERROR: Staging file is STALE (from a previous file).")
-        print(f"  File modified at:   {file_time_str}")
-        print(f"  Current file started: {start_time_str}")
+        show_time_str = datetime.fromtimestamp(last_show_at).strftime('%H:%M:%S')
+        print("ERROR: Staging file is STALE (not written after you ran 'show').")
+        print(f"  Staging file modified: {file_time_str}")
+        print(f"  You ran 'show' at:     {show_time_str}")
         print()
-        print("You must write NEW content to the staging file for this file.")
+        print("You must write NEW content to the staging file after reviewing.")
         print(f"  Staging path: {staging_path}")
         return
 
@@ -339,21 +259,19 @@ def cmd_propose(filepath: str, comment: str):
         print("Usage: ralph merge propose '<filepath>' '<comment>'")
         return
 
-    # Update state
-    model.state = "PROPOSAL_PENDING"
-    model.proposal_comment = comment
-    model.proposed_by = agent
-    model.reset_approvals()
+    # If we were in REJECTED state but staging is now clean, transition out first
+    if model.state == "REJECTED":
+        model.fix_markers()
 
-    # RESET SEEN TRACKING - new proposal must be viewed before approving
-    model.dev1_seen_staging = False
-    model.dev2_seen_staging = False
-
-    # Proposer auto-approves
-    if agent == "dev1":
-        model.dev1_approved = True
-    else:
-        model.dev2_approved = True
+    # Trigger the appropriate proposal transition
+    try:
+        if agent == "dev1":
+            model.dev1_propose(comment=comment)
+        else:
+            model.dev2_propose(comment=comment)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return
 
     save_model(model)
 
@@ -368,11 +286,21 @@ def cmd_propose(filepath: str, comment: str):
 
 
 def cmd_approve():
-    """Approve the current proposal."""
+    """Approve the current proposal.
+
+    Triggers: dev1_approve or dev2_approve based on agent
+    """
     model = load_model()
     agent = get_agent()
 
-    if model.state != "PROPOSAL_PENDING":
+    # Check we're in a proposal state
+    proposal_states = (
+        "PROPOSAL_DEV2_NEITHER",
+        "PROPOSAL_DEV1_DEV2_APPROVED",
+        "PROPOSAL_DEV1_NEITHER",
+        "PROPOSAL_DEV2_DEV1_APPROVED",
+    )
+    if model.state not in proposal_states:
         print(f"No proposal to approve. State: {model.state}")
         return
 
@@ -380,65 +308,41 @@ def cmd_approve():
         print(f"Not your turn. Wait for {model.get_turn()}.")
         return
 
-    # Validate seen all versions
-    if not model.has_seen_all(agent):
-        print("ERROR: You must see all 3 versions before approving.")
-        print()
-        print("Run 'ralph merge show' to see which versions you still need to read.")
+    # Validate has run show
+    if not model.has_seen(agent):
+        print("ERROR: You must run 'ralph merge show' before approving.")
+        print("Run: ralph merge show")
         return
 
-    # CRITICAL: Must have seen the proposal before approving
-    # Prevents blind approvals based just on the comment
-    has_seen_staging = model.dev1_seen_staging if agent == "dev1" else model.dev2_seen_staging
-    if not has_seen_staging:
-        print(f"ERROR: You must view the proposal before approving.")
-        print(f"")
-        print(f"Run 'ralph merge show staging' first to see the staging file and proposal.")
-        print(f"Don't approve blindly based on the comment alone.")
-        return
-
-    # Mark approved
-    if agent == "dev1":
-        model.dev1_approved = True
-    else:
-        model.dev2_approved = True
-
-    # Check if both approved
-    if model.dev1_approved and model.dev2_approved:
-        print(f"Both approved! File {model.current_file} resolved.")
-
-        # Apply staging to repo
-        _apply_staging(model)
-
-        # Move to next file
-        model.file_index += 1
-        if model.file_index >= len(model.all_files):
-            model.state = "DONE"
-            model.current_file = None
-            print()
-            print("=" * 60)
-            print("ALL FILES MERGED!")
-            print("=" * 60)
-            print()
-            print("Staging directory: ~/.claude/merge-staging/")
-            print("Review and commit the changes.")
+    # Trigger the appropriate approval transition
+    try:
+        if agent == "dev1":
+            model.dev1_approve()
         else:
-            model.current_file = model.all_files[model.file_index]
-            model.state = "REVIEWING"
-            model.file_started_at = time.time()
-            model.reset_seen_for_file()
-            model.reset_approvals()
-            model.proposal_comment = None
-            model.proposed_by = None
-            print()
-            print(f"Next file ({model.file_index + 1}/{len(model.all_files)}): {model.current_file}")
-            print()
-            print("Run 'ralph merge show' to see status.")
-    else:
-        other = "dev2" if agent == "dev1" else "dev1"
-        print(f"You approved. Waiting for {other} to approve.")
+            model.dev2_approve()
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return
 
     save_model(model)
+
+    # Check final state
+    if model.state == "DONE":
+        print()
+        print("=" * 60)
+        print("ALL FILES MERGED!")
+        print("=" * 60)
+        print()
+        print("Staging directory: ~/.claude/merge-staging/")
+        print("Run: ralph merge finalize")
+    elif model.state in ("PROPOSAL_DEV1_DEV2_APPROVED", "PROPOSAL_DEV2_DEV1_APPROVED"):
+        other = "dev2" if agent == "dev1" else "dev1"
+        print(f"You approved. Waiting for {other} to approve.")
+    elif model.state == "NO_PROPOSAL_DEV1":
+        # Advanced to next file
+        print()
+        print(f"Advanced to file {model.file_index + 1}/{len(model.all_files)}: {model.current_file}")
+        print("Run 'ralph merge show' to see status.")
 
 
 def _apply_staging(model: FileMergeModel):
@@ -461,36 +365,6 @@ def _apply_staging(model: FileMergeModel):
     print(f"Applied staging to {model.current_file}")
 
 
-def cmd_next():
-    """Move to the next file (for recovery/skip scenarios)."""
-    model = load_model()
-
-    if model.state == "INIT":
-        print("No merge in progress. Run: ralph merge start")
-        return
-
-    if model.state == "DONE":
-        print("Merge already complete.")
-        return
-
-    model.file_index += 1
-    if model.file_index >= len(model.all_files):
-        model.state = "DONE"
-        model.current_file = None
-        print("No more files. Merge complete.")
-    else:
-        model.current_file = model.all_files[model.file_index]
-        model.state = "REVIEWING"
-        model.file_started_at = time.time()
-        model.reset_seen_for_file()
-        model.reset_approvals()
-        model.proposal_comment = None
-        model.proposed_by = None
-        print(f"Moved to file {model.file_index + 1}/{len(model.all_files)}: {model.current_file}")
-
-    save_model(model)
-
-
 def cmd_finalize():
     """Finalize merge after all files resolved by state machine.
 
@@ -502,7 +376,7 @@ def cmd_finalize():
     """
     agent = get_agent()
 
-    # Check state machine - must be in DONE state OR all files auto-resolved
+    # Check state machine - must be in DONE state
     model = load_model()
     if model.state != "DONE":
         print(f"Not ready to finalize. State: {model.state}")
@@ -596,7 +470,7 @@ def cmd_next_action() -> dict:
         {
             "agent": str,
             "state": str,
-            "actions": list,  # ALL valid actions for this state
+            "actions": list,
             "wait_for": str | None,
             "message": str,
         }
@@ -612,7 +486,7 @@ def cmd_next_action() -> dict:
         "message": "",
     }
 
-    # --- INIT: no merge started yet ---
+    # Handle based on state
     if model.state == "INIT":
         if agent == "dev1":
             result["actions"] = ["ralph merge start"]
@@ -622,51 +496,46 @@ def cmd_next_action() -> dict:
             result["message"] = "Waiting for dev1 to start merge"
         return result
 
-    # --- DONE: all files resolved ---
     if model.state == "DONE":
         result["actions"] = ["ralph merge finalize"]
         result["message"] = "All files merged - finalize"
         return result
 
-    # --- REVIEWING: agents read versions, then propose ---
-    if model.state == "REVIEWING":
-        unseen = model.get_unseen_versions(agent)
+    # Check if it's my turn
+    if model.is_my_turn():
+        # Must run 'show' first
+        if not model.has_seen(agent):
+            result["actions"] = ["ralph merge show"]
+            result["message"] = "Run 'show' to see all versions"
+            return result
 
-        if not unseen:
+        # In NO_PROPOSAL state, dev1 proposes
+        if model.state == "NO_PROPOSAL_DEV1":
             result["actions"] = [
                 f"ralph merge propose '{model.current_file}' '<comment>'",
             ]
-            result["message"] = f"Your turn: seen all versions, ready to propose ({model.current_file})"
-        else:
-            result["actions"] = [f"ralph merge show {v}" for v in unseen]
-            result["message"] = f"Your turn: read remaining versions ({', '.join(unseen)})"
-        return result
+            result["message"] = f"Your turn: propose resolution for {model.current_file}"
+            return result
 
-    # --- PROPOSAL_PENDING: one agent proposed, other must approve ---
-    if model.state == "PROPOSAL_PENDING":
-        if model.is_my_turn():
-            unseen = model.get_unseen_versions(agent)
+        # In proposal states, can approve or counter-propose
+        if model.state in ("PROPOSAL_DEV2_NEITHER", "PROPOSAL_DEV1_DEV2_APPROVED",
+                           "PROPOSAL_DEV1_NEITHER", "PROPOSAL_DEV2_DEV1_APPROVED"):
+            result["actions"] = [
+                "ralph merge approve",
+                f"ralph merge propose '{model.current_file}' '<counter-comment>'",
+            ]
+            result["message"] = f"Your turn: approve or counter-propose ({model.proposed_by}'s proposal)"
+            return result
 
-            if unseen:
-                result["actions"] = [f"ralph merge show {v}" for v in unseen]
-                result["message"] = f"Your turn: read remaining versions before approving ({', '.join(unseen)})"
-            else:
-                has_seen_staging = model.dev1_seen_staging if agent == "dev1" else model.dev2_seen_staging
+        # Error states
+        if model.state == "REJECTED":
+            result["actions"] = [f"ralph merge propose '{model.current_file}' '<comment>'"]
+            result["message"] = "Fix staging file (remove conflict markers) and propose again"
+            return result
 
-                if not has_seen_staging:
-                    result["actions"] = ["ralph merge show staging"]
-                    result["message"] = f"Your turn: review staging proposal by {model.proposed_by}"
-                else:
-                    result["actions"] = [
-                        "ralph merge approve",
-                        f"ralph merge propose '{model.current_file}' '<counter-comment>'",
-                    ]
-                    result["message"] = f"Your turn: approve or counter-propose ({model.proposed_by}'s proposal)"
-        else:
-            result["wait_for"] = model.get_turn()
-            result["message"] = f"Waiting for {result['wait_for']} to review proposal"
-        return result
+    else:
+        # Not my turn - wait
+        result["wait_for"] = model.get_turn()
+        result["message"] = f"Waiting for {result['wait_for']}"
 
-    # Fallback for unexpected states
-    result["message"] = f"Unknown state: {model.state}"
     return result

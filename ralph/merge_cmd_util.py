@@ -16,6 +16,23 @@ from merge_git import get_branch_info
 from merge_file_state import load_model
 from merge_file_review import cmd_next_action as file_next_action
 
+# Remote machine config (same as claude-sync.sh)
+REMOTE_HOST = "192.168.1.104"
+REMOTE_USER = "carlos"
+
+
+def check_remote_online() -> bool:
+    """Check if the remote machine (dev2) is reachable via SSH."""
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes",
+             f"{REMOTE_USER}@{REMOTE_HOST}", "echo ok"],
+            capture_output=True, text=True, timeout=5
+        )
+        return result.returncode == 0 and "ok" in result.stdout
+    except (subprocess.TimeoutExpired, Exception):
+        return False
+
 
 def cmd_status():
     """Show current merge status using file-level merge state."""
@@ -107,11 +124,36 @@ def cmd_complete():
 
 
 def cmd_wait(seconds: int = 10) -> dict:
-    """Wait the full time, then check what to do next."""
+    """Wait the full time, then check what to do next.
+
+    First checks if remote machine is online. If offline, returns immediately
+    with offline status instead of waiting indefinitely.
+    """
+    # Check if we're waiting for dev2 and they're offline
+    model = load_model()
+    agent = get_agent()
+    turn = model.get_turn()
+
+    # If we're dev1 waiting for dev2, check if dev2 is online
+    if agent == "dev1" and turn == "dev2":
+        if not check_remote_online():
+            print(f">>> OFFLINE: dev2 machine ({REMOTE_HOST}) is not reachable")
+            print(">>> TIP: dev2 must be online to approve. Merge will resume when they're back.")
+            return {
+                "agent": agent,
+                "phase": model.state,
+                "current_file": model.current_file,
+                "whose_turn": turn,
+                "action": None,
+                "wait_for": "dev2",
+                "message": "dev2 is offline",
+                "offline": True,
+                "waited": 0,
+            }
+
     time.sleep(seconds)
 
     # Use file-level merge state machine
-    model = load_model()
     result = file_next_action()
 
     # Convert to expected format

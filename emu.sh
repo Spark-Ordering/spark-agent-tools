@@ -193,12 +193,23 @@ case "$1" in
 
     start|launch)
         # Start SparkPos app and wait for it to load
-        PKG="${2:-$DEFAULT_PKG}"
+        # Use --e2e flag to launch in E2E mode (mock Finix, etc.)
+        shift  # remove "start"/"launch"
+        E2E_ARGS=""
+        PKG="$DEFAULT_PKG"
+        for arg in "$@"; do
+            if [ "$arg" = "--e2e" ]; then
+                E2E_ARGS="--ez e2e_mode true"
+                echo "E2E mode enabled"
+            elif [[ "$arg" != --* ]]; then
+                PKG="$arg"
+            fi
+        done
         ACT="com.starter.pad.MainActivity"
         echo "Starting $PKG..."
         $ADB shell am force-stop "$PKG" 2>/dev/null
         sleep 1
-        $ADB shell am start -n "$PKG/$ACT"
+        $ADB shell am start -n "$PKG/$ACT" $E2E_ARGS
         echo "Waiting for app to load (up to 45s)..."
         for i in $(seq 1 9); do
             sleep 5
@@ -216,6 +227,29 @@ case "$1" in
             echo "  ...waiting (${i}0s / 45s)"
         done
         echo "App started. Use 'emu.sh shot' to check screen."
+        ;;
+
+    start-e2e)
+        # Start SparkPos in E2E mode with a ready token
+        # Usage: emu.sh start-e2e [token] [pkg]
+        shift
+        TOKEN="${1:-$(date +%s | tail -c 7)}"
+        PKG="${2:-$DEFAULT_PKG}"
+        ACT="com.starter.pad.MainActivity"
+        echo "Starting $PKG in E2E mode (token: $TOKEN)..."
+        $ADB shell am force-stop "$PKG" 2>/dev/null
+        sleep 1
+        $ADB shell am start -n "$PKG/$ACT" --ez e2e_mode true --es e2e_ready_token "$TOKEN"
+        echo "Waiting for app to load..."
+        for i in $(seq 1 9); do
+            sleep 5
+            if $ADB shell pidof "$PKG" >/dev/null 2>&1; then
+                echo "App running (${i}0s). Token: $TOKEN"
+                break
+            fi
+            echo "  ...waiting (${i}0s / 45s)"
+        done
+        echo "Use 'emu.sh dump-all' to check if token is visible."
         ;;
 
     stop|kill)
@@ -339,6 +373,17 @@ case "$1" in
         else
             echo "Settings not found. Is FORCE_SETTINGS_UNLOCKED=true set?"
         fi
+        ;;
+
+    nav-order-list)
+        # Navigate to Order List from home screen
+        echo "Opening hamburger menu..."
+        $ADB shell input tap 56 64
+        sleep 2
+        echo "Tapping Order List..."
+        "$0" tap-text "Order List"
+        sleep 2
+        echo "Order List opened. Use 'emu.sh shot' to verify."
         ;;
 
     nav-card-reader)
@@ -572,68 +617,63 @@ case "$1" in
         ;;
 
     login)
-        # Login with test credentials (Restaurant ID: 23, Password: password)
-        # Uses accessibilityLabel (content-desc) for reliable element targeting
-        # Note: React Native Paper components use accessibilityLabel, not testID
+        # Login with test credentials (Restaurant ID: 23, Password: password, PIN: 5942)
+        # Handles three states: login screen, PIN screen, or already on home
+        # Uses "$0" tap-text/tap-id for all element interaction
         RESTAURANT_ID="${2:-23}"
         PASSWORD="${3:-password}"
+        PIN="${4:-5942}"
 
-        echo "Logging in with Restaurant ID: $RESTAURANT_ID"
+        # Detect current screen via screencap + dump
+        SCREEN_TEXT=$(timeout 10 $ADB shell uiautomator dump /dev/tty 2>/dev/null || echo "")
 
-        # Helper to find element by testID (content-desc) and tap it
-        tap_testid() {
-            local testid="$1"
-            $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
-            $ADB pull /sdcard/ui.xml /tmp/ui.xml 2>/dev/null
-            local bounds=$(cat /tmp/ui.xml | tr '>' '\n' | grep "content-desc=\"$testid\"" | head -1 | sed 's/.*bounds="\[\([0-9]*\),\([0-9]*\)\]\[\([0-9]*\),\([0-9]*\)\]".*/\1 \2 \3 \4/')
-            if [ -n "$bounds" ]; then
-                read x1 y1 x2 y2 <<< "$bounds"
-                local cx=$(( (x1 + x2) / 2 ))
-                local cy=$(( (y1 + y2) / 2 ))
-                $ADB shell input tap "$cx" "$cy"
-                return 0
-            fi
-            return 1
-        }
+        if echo "$SCREEN_TEXT" | grep -q 'text="Enter PIN"'; then
+            # On PIN screen
+            echo "PIN screen detected. Entering PIN: $PIN"
+            for digit in $(echo "$PIN" | grep -o .); do
+                "$0" tap-text "$digit"
+                sleep 0.5
+            done
+            sleep 5
+            echo "PIN entered."
 
-        # Tap Restaurant ID field (by accessibilityLabel)
-        if tap_testid "login-restaurant-id"; then
+        elif echo "$SCREEN_TEXT" | grep -q 'Restaurant ID'; then
+            # On login screen
+            echo "Logging in with Restaurant ID: $RESTAURANT_ID"
+            "$0" tap-id "login-restaurant-id"
             sleep 0.5
             $ADB shell input text "$RESTAURANT_ID"
             sleep 0.5
-            # Dismiss keyboard before tapping next field
             $ADB shell input keyevent 4
             sleep 0.5
-        else
-            echo "Restaurant ID field not found (accessibilityLabel: login-restaurant-id)"
-            exit 1
-        fi
 
-        # Tap Password field (by accessibilityLabel)
-        if tap_testid "login-password"; then
+            "$0" tap-id "login-password"
             sleep 0.5
             $ADB shell input text "$PASSWORD"
             sleep 0.5
-            # Dismiss keyboard
             $ADB shell input keyevent 4
             sleep 0.5
+
+            "$0" tap-id "login-button"
+            echo "Login button tapped. Waiting..."
+            sleep 8
+
+            # Check if PIN screen appeared after login
+            SCREEN_TEXT2=$(timeout 10 $ADB shell uiautomator dump /dev/tty 2>/dev/null || echo "")
+            if echo "$SCREEN_TEXT2" | grep -q 'text="Enter PIN"'; then
+                echo "PIN screen appeared. Entering PIN: $PIN"
+                for digit in $(echo "$PIN" | grep -o .); do
+                    "$0" tap-text "$digit"
+                    sleep 0.5
+                done
+                sleep 5
+                echo "PIN entered."
+            fi
         else
-            echo "Password field not found (accessibilityLabel: login-password)"
-            exit 1
+            echo "Already on home screen or unknown screen. Use 'emu.sh shot' to check."
         fi
 
-        # Tap Login button (by testID)
-        if tap_testid "login-button"; then
-            echo "Login button tapped. Waiting for app to load..."
-            sleep 5
-            echo "Login complete. Use 'emu.sh shot' to verify."
-        else
-            echo "Login button not found (accessibilityLabel: login-button)"
-            exit 1
-        fi
-
-        rm -f /tmp/ui.xml
-        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
+        echo "Login complete. Use 'emu.sh shot' to verify."
         ;;
 
     tap-id)
@@ -1192,7 +1232,8 @@ case "$1" in
         echo "  nav-card-reader         - Navigate to Card Reader settings"
         echo "  nav-menu-settings       - Navigate to Menu Settings page"
         echo "  nav-menu-editor         - Navigate to Menu Editor (full path)"
-        echo "  login [id] [pw]         - Login (default: 23/password)"
+        echo "  nav-order-list          - Navigate to Order List"
+        echo "  login [id] [pw] [pin]   - Login + PIN (default: 23/password/5942)"
         echo "  tap-text <text>         - Tap UI element by its text content"
         echo "  tap-text-nth <text> <n> - Tap nth element with text (0-indexed)"
         echo "  setup-card-reader       - Full card reader setup (Link → Activate → Check Connection)"

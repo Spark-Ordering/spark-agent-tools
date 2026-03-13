@@ -54,14 +54,15 @@ cborde/menu-editor-cleanup          (no ticket)
 
 ## PR Creation
 
-1. **Title format**: `ENG-NNNN: Short description` (ticket number first)
+1. **Base branch**: Always target `develop` (use `--base develop`)
+2. **Title format**: `ENG-NNNN: Short description` (ticket number first)
    - Example: `ENG-2061: Add version picker to menu settings`
    - If no ticket: just the description
-2. **NEVER mention Claude, AI, or assistants** anywhere in the PR (title, body, comments)
-3. **Do NOT include** the "Generated with Claude Code" footer
-4. Body uses this format (no Claude attribution):
+3. **NEVER mention Claude, AI, or assistants** anywhere in the PR (title, body, comments)
+4. **Do NOT include** the "Generated with Claude Code" footer
+5. Body uses this format (no Claude attribution):
 ```bash
-gh pr create --title "ENG-2061: Add version picker" --body "$(cat <<'EOF'
+gh pr create --base develop --title "ENG-2061: Add version picker" --body "$(cat <<'EOF'
 ## Summary
 - Compact menu settings layout with side-by-side buttons
 - Scrollable version table with activate functionality

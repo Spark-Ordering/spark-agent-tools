@@ -158,9 +158,15 @@ case "${1:-status}" in
         fi
 
         # If agent detected/specified, run team setup (creates branch, splits tasks)
+        # But only if the other machine is reachable — otherwise stay on current branch (solo mode)
         if [[ -n "$agent" ]] && [[ "$agent" != "all" ]]; then
-            plan_file=$(get_plan_file)
-            "$SCRIPT_DIR/ralph-team-setup.sh" "$agent" "$plan_file" 2>/dev/null
+            source "$SCRIPT_DIR/ralph-remote-check.sh"
+            if is_remote_online; then
+                plan_file=$(get_plan_file)
+                "$SCRIPT_DIR/ralph-team-setup.sh" "$agent" "$plan_file" 2>/dev/null
+            else
+                echo "⚠️  Remote offline — staying on current branch (solo mode)"
+            fi
         fi
 
         # Show status
