@@ -1,0 +1,31 @@
+#!/bin/bash
+# Fake curl for jira-sweep.test.sh: routes Jira REST paths to fixtures in $FIXTURES.
+method=GET; body=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift ;;
+    -d) body="$2"; shift ;;
+    -u|-H) shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+path="${url#https://*/}"
+echo "$method $path" >>"$FIXTURES/calls.log"
+key="${path#rest/api/3/issue/}"; key="${key%%/*}"
+
+case "$method $path" in
+  "GET rest/api/3/myself") echo '{"accountId":"ME"}' ;;
+  "GET rest/api/3/search/jql?"*"Pending%20Release"*"nextPageToken=") cat "$FIXTURES/pending-page1.json" ;;
+  "GET rest/api/3/search/jql?"*"Pending%20Release"*"nextPageToken=TOKP2") cat "$FIXTURES/pending-page2.json" ;;
+  "GET rest/api/3/search/jql?"*"nextPageToken=") cat "$FIXTURES/search-page1.json" ;;
+  "GET rest/api/3/search/jql?"*"nextPageToken=TOK2") cat "$FIXTURES/search-page2.json" ;;
+  "PUT rest/api/3/issue/"*) echo "$key $body" >>"$FIXTURES/labels.log" ;;
+  "GET rest/api/3/issue/"*"/changelog?maxResults=100&startAt="*) cat "$FIXTURES/changelog-$key-last.json" ;;
+  "GET rest/api/3/issue/"*"/changelog?maxResults=100")
+    if [ -f "$FIXTURES/changelog-$key.json" ]; then cat "$FIXTURES/changelog-$key.json"; else cat "$FIXTURES/changelog-default.json"; fi ;;
+  "GET rest/api/3/issue/"*"/transitions")
+    if [ -f "$FIXTURES/transitions-$key.json" ]; then cat "$FIXTURES/transitions-$key.json"; else cat "$FIXTURES/transitions-default.json"; fi ;;
+  "POST rest/api/3/issue/"*"/transitions") echo "$key $body" >>"$FIXTURES/posts.log" ;;
+  *) echo "fake curl: unhandled $method $path" >&2; exit 22 ;;
+esac
