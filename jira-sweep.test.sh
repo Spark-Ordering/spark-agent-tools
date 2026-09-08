@@ -33,8 +33,9 @@ echo '{"transitions":[{"id":"31","to":{"name":"Done"}},{"id":"4","to":{"name":"P
 
 # ENG-2510 labelling: ENG-201 needs the label, ENG-202 already has it, ENG-203 on page 2.
 # ENG-2562: ENG-204 has a stale 2.06.X (add + drop), ENG-205 has current + two stale (drop only),
-# ENG-206 carries a newer 2.08.X than version.json (kept as-is, untouched).
-echo '{"version":"2.07.02","versionCode":20702}' >"$FIXTURES/version.json"
+# ENG-206 carries a newer 2.08.X than the pending release (replaced too: add + drop).
+# version.json 2.08.02 = develop already bumped past the pending 2.07 release -> label 2.07.X.
+echo '{"version":"2.08.02","versionCode":20802}' >"$FIXTURES/version.json"
 export VERSION_JSON="$FIXTURES/version.json"
 jq -cn '{issues: [{key:"ENG-201",fields:{labels:["claude"]}},{key:"ENG-202",fields:{labels:["claude","2.07.X"]}},
                   {key:"ENG-204",fields:{labels:["claude","2.06.X"]}},{key:"ENG-205",fields:{labels:["2.05.X","claude","2.07.X","2.06.X"]}},
@@ -71,13 +72,13 @@ echo '{"transitions":[{"id":"31","to":{"name":"Done"}}]}' >"$FIXTURES/transition
 : >"$FIXTURES/calls.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
 grep -q "ERROR ENG-1: no transition to 'Pending Release'" <<<"$out" || fail "ENG-1 should error on missing transition: $out"
-grep -q "done: checked=120 moved=4 labelled=4 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
+grep -q "done: checked=120 moved=4 labelled=5 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
 echo "ok: missing transition logs and continues"
 
 cp "$FIXTURES/transitions-default.json" "$FIXTURES/transitions-ENG-1.json"
 : >"$FIXTURES/calls.log"; : >"$FIXTURES/posts.log"; : >"$FIXTURES/labels.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
-grep -q "done: checked=120 moved=5 labelled=4 dry_run=0" <<<"$out" || fail "expected 5 moves + 4 labels: $out"
+grep -q "done: checked=120 moved=5 labelled=5 dry_run=0" <<<"$out" || fail "expected 5 moves + 5 labels: $out"
 posted="$(cut -d' ' -f1 "$FIXTURES/posts.log" | sort -V | tr '\n' ' ')"
 [ "$posted" = "ENG-1 ENG-2 ENG-3 ENG-51 ENG-120 " ] || fail "posted set wrong: $posted"
 grep -q '"id":"4"' "$FIXTURES/posts.log" || fail "transition id should be 4"
@@ -87,7 +88,8 @@ echo "ok: pagination, author + label filter, transitions"
 
 # --- version labelling (ENG-2510 + ENG-2562): paginated, skips already-correct, one version label kept
 labelled="$(cut -d' ' -f1 "$FIXTURES/labels.log" | sort -V | tr '\n' ' ')"
-[ "$labelled" = "ENG-201 ENG-203 ENG-204 ENG-205 " ] || fail "labelled set wrong: $labelled"
+[ "$labelled" = "ENG-201 ENG-203 ENG-204 ENG-205 ENG-206 " ] || fail "labelled set wrong: $labelled"
+grep -q '^ENG-206 {"update":{"labels":\[{"add":"2.07.X"},{"remove":"2.08.X"}\]}}$' "$FIXTURES/labels.log" || fail "ENG-206 body wrong"
 grep -q '^ENG-201 {"update":{"labels":\[{"add":"2.07.X"}\]}}$' "$FIXTURES/labels.log" || fail "ENG-201 body wrong"
 grep -q '^ENG-204 {"update":{"labels":\[{"add":"2.07.X"},{"remove":"2.06.X"}\]}}$' "$FIXTURES/labels.log" || fail "ENG-204 body wrong"
 grep -q '^ENG-205 {"update":{"labels":\[{"remove":"2.05.X"},{"remove":"2.06.X"}\]}}$' "$FIXTURES/labels.log" || fail "ENG-205 body wrong"

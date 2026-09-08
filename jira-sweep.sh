@@ -8,7 +8,8 @@ TZ_NAME="America/Los_Angeles"
 TARGET_STATUS="Pending Release"
 JQL='project = ENG AND sprint in openSprints() AND status = Done'
 LABEL_JQL='project = ENG AND sprint in openSprints() AND status = "Pending Release" AND labels = claude'
-VERSION_JSON="${VERSION_JSON:-$HOME/Code/SparkPos/version.json}"
+SPARKPOS="$HOME/Code/SparkPos"
+VERSION_JSON="${VERSION_JSON:-}"   # test override; default reads origin/develop, not the checkout
 LOG="${JIRA_SWEEP_LOG:-$HOME/Library/Logs/jira-sweep.log}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -69,21 +70,39 @@ transition_to_target() {
   log "moved $key -> $TARGET_STATUS"
 }
 
-# ENG-2510: labels claude tickets in Pending Release with the upcoming version (major.minor.X).
-version_label() {
-  jq -r '.version | split(".") | .[0] + "." + .[1] + ".X"' "$VERSION_JSON"
+# ENG-2510: labels claude tickets in Pending Release with the release in flight — one minor
+# below version.json (develop is bumped at cut, so 2.09.00 means release 2.08 is pending).
+version_json() {
+  if [ -n "$VERSION_JSON" ]; then cat "$VERSION_JSON"; return; fi
+  git -C "$SPARKPOS" fetch -q origin develop
+  git -C "$SPARKPOS" show origin/develop:version.json
 }
 
-# ENG-2562: a ticket carries exactly one version label — the newest of (its own ∪ upcoming);
-# older ones are dropped in the same PUT. Emits "KEY<TAB>keep<TAB>body<TAB>drop,list" per ticket to fix
+version_label() {
+  version_json | jq -r '.version | split(".") | .[0] + "." + (("0" + ((.[1] | tonumber) - 1 | tostring))[-2:]) + ".X"'
+}
+
+# The release branch that matches version_label, e.g. label 2.09.X -> release-2-09-XX.
+release_branch_name() {
+  version_json | jq -r '.version | split(".") | "release-" + .[0] + "-" + (("0" + ((.[1] | tonumber) - 1 | tostring))[-2:]) + "-XX"'
+}
+
+# ENG-XXXX: only label if the ticket's PR is actually in the release branch. A ticket
+# merged to develop after the cut isn't reachable from the branch -> skip it (labels later).
+pr_in_release() {
+  local key="$1" br="$2"
+  [ -n "$(git -C "$SPARKPOS" log "origin/$br" -1 -E --grep="${key}([^0-9]|$)" --format=%H 2>/dev/null)" ]
+}
+
+# ENG-2562: a ticket carries exactly one version label — the pending release's; every other
+# version label is dropped in the same PUT. Emits "KEY<TAB>keep<TAB>body<TAB>drop,list" per ticket to fix
 # (drop last: an empty field collapses under a tab IFS, so it must not precede anything).
 label_plan() {
   jq -r --arg l "$1" '
     def vers: select(test("^[0-9]+\\.[0-9]+\\.X$"));
-    def rank: split(".") | map(tonumber? // 0);
     .issues[]
     | (.fields.labels // []) as $have
-    | ([$have[] | vers] + [$l] | unique | sort_by(rank) | last) as $keep
+    | $l as $keep
     | [$have[] | vers | select(. != $keep)] as $drop
     | select(($drop | length) > 0 or ($have | index($keep) | not))
     | [.key, $keep,
@@ -94,11 +113,21 @@ label_plan() {
 
 # Increments caller's `labelled` (dynamic scope) so log lines still reach stdout.
 label_pending_release() {
-  local label token="" resp key keep drop body
+  local label token="" resp key keep drop body branch gate=0
   label="$(version_label)"
+  branch="$(release_branch_name)"
+  if git -C "$SPARKPOS" ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+    gate=1; git -C "$SPARKPOS" fetch -q origin "$branch"
+    log "release branch origin/$branch exists — gating labels to PRs in it"
+  else
+    log "no release branch origin/$branch — labelling blindly"
+  fi
   while :; do
     resp="$(api GET "/rest/api/3/search/jql?jql=$(urlencode "$LABEL_JQL")&fields=labels&maxResults=100&nextPageToken=$token")"
     while IFS=$'\t' read -r key keep body drop; do
+      if [ "$gate" = "1" ] && ! pr_in_release "$key" "$branch"; then
+        log "skip $key: not in origin/$branch"; continue
+      fi
       if [ "$DRY_RUN" = "1" ]; then log "DRY_RUN would label $key $keep${drop:+ (drop $drop)}"; else
         if api PUT "/rest/api/3/issue/$key" "$body" >/dev/null; then
           log "labelled $key $keep${drop:+ (dropped $drop)}"

@@ -35,7 +35,13 @@ SCROLL_DURATION=500    # milliseconds
 SWIPE_DURATION=300     # milliseconds (for raw swipe command)
 
 # Find the emulator device (prefer emulator over physical device)
+# Honors ANDROID_SERIAL env var if set — needed when multiple emulators are running
+# (e.g. ENG-2124 paired-tablet testing with WORKER_1 + WORKER_2).
 get_device() {
+    if [ -n "${ANDROID_SERIAL:-}" ]; then
+        echo "$ANDROID_SERIAL"
+        return
+    fi
     local devices=$(adb devices | grep -v "List of devices" | grep -v "^$")
     local emulator=$(echo "$devices" | grep "emulator" | head -1 | cut -f1)
 
@@ -75,6 +81,176 @@ case "$1" in
             echo "Error: Screenshot timed out (15s). Emulator may be slow or unresponsive."
             exit 1
         fi
+        ;;
+
+    record-start|rec-start|rs)
+        # Start screen recording on the emulator in the background.
+        # Writes the PID of the local nohup wrapper to /tmp/emu-record.pid.
+        # adb screenrecord enforces a max duration; we set 180s (its hard cap).
+        # Use record-stop to pull the file early.
+        if [ -f /tmp/emu-record.pid ] && kill -0 "$(cat /tmp/emu-record.pid)" 2>/dev/null; then
+            echo "Error: A recording is already in progress (pid $(cat /tmp/emu-record.pid)). Run 'emu.sh record-stop' first."
+            exit 1
+        fi
+        $ADB shell rm -f /sdcard/emu-record.mp4 >/dev/null 2>&1
+        # Capture host clock at the moment recording starts. record-trim-from
+        # reads this to compute the offset of a maestro.log timestamp into
+        # the video. Stored as fractional epoch seconds.
+        date +%s.%N > /tmp/emu-record-host-start.txt
+        nohup $ADB shell screenrecord --time-limit 180 /sdcard/emu-record.mp4 >/tmp/emu-record.log 2>&1 &
+        echo $! > /tmp/emu-record.pid
+        echo "Recording started (pid $(cat /tmp/emu-record.pid)). Run 'emu.sh record-stop' to finalize."
+        ;;
+
+    record-stop|rec-stop|re)
+        # Stop the in-progress recording, pull the file, print the path.
+        if [ ! -f /tmp/emu-record.pid ]; then
+            echo "Error: No recording in progress (no /tmp/emu-record.pid)."
+            exit 1
+        fi
+        REC_PID=$(cat /tmp/emu-record.pid)
+        # Kill the local nohup wrapper; the on-device screenrecord process
+        # gets SIGINT-equivalent via adb when the shell session ends, which
+        # cleanly flushes the .mp4 (raw kill -9 truncates the file).
+        kill -INT "$REC_PID" 2>/dev/null
+        # Also kill the on-device screenrecord process so the file finalizes.
+        $ADB shell "pkill -INT screenrecord" >/dev/null 2>&1
+        # screenrecord needs ~2s to finalize the file after SIGINT.
+        sleep 3
+        rm -f /tmp/emu-record.pid
+        $ADB pull /sdcard/emu-record.mp4 /tmp/emu-record.mp4 >/dev/null 2>&1
+        if [ ! -f /tmp/emu-record.mp4 ] || [ ! -s /tmp/emu-record.mp4 ]; then
+            echo "Error: Failed to pull /sdcard/emu-record.mp4 (file missing or empty)."
+            exit 1
+        fi
+        $ADB shell rm -f /sdcard/emu-record.mp4 >/dev/null 2>&1
+        echo "/tmp/emu-record.mp4"
+        ;;
+
+    record-trim-from|rec-trim-from|rtf)
+        # Trim a screen recording to start at the moment a maestro.log line first
+        # appears. Reads the recording's host start time from
+        # /tmp/emu-record-host-start.txt (written by record-start), greps the
+        # latest ~/.maestro/tests/*/maestro.log for the first line matching
+        # <pattern>, parses its HH:MM:SS.mmm timestamp, subtracts to get the
+        # offset into the recording, and ffmpeg-trims there.
+        #
+        # Usage:
+        #   emu.sh record-trim-from "<pattern>" [input.mp4] [output.mp4]
+        # Examples:
+        #   emu.sh record-trim-from "Enter PIN"
+        #   emu.sh record-trim-from "login.yaml... COMPLETED"
+        #   emu.sh record-trim-from "order-type-DINE_IN"
+        PATTERN="$2"
+        TF_INPUT="${3:-/tmp/emu-record.mp4}"
+        TF_OUTPUT="${4:-/tmp/emu-record-trimmed.mp4}"
+        if [ -z "$PATTERN" ]; then
+            echo "Usage: emu.sh record-trim-from \"<log-pattern>\" [input.mp4] [output.mp4]"
+            exit 1
+        fi
+        if [ ! -f /tmp/emu-record-host-start.txt ]; then
+            echo "Error: /tmp/emu-record-host-start.txt not found. Recording must be started via 'emu.sh record-start' (which writes the host clock)."
+            exit 1
+        fi
+        if [ ! -f "$TF_INPUT" ]; then
+            echo "Error: input file not found: $TF_INPUT"
+            exit 1
+        fi
+        if ! command -v ffmpeg >/dev/null 2>&1; then
+            echo "Error: ffmpeg not found on PATH (brew install ffmpeg)"
+            exit 1
+        fi
+        REC_START=$(cat /tmp/emu-record-host-start.txt)
+
+        LATEST_LOG=$(ls -t ~/.maestro/tests/*/maestro.log 2>/dev/null | head -1)
+        if [ -z "$LATEST_LOG" ]; then
+            echo "Error: no maestro.log found under ~/.maestro/tests/"
+            exit 1
+        fi
+
+        LOG_LINE=$(grep -m 1 "$PATTERN" "$LATEST_LOG")
+        if [ -z "$LOG_LINE" ]; then
+            echo "Error: pattern '$PATTERN' not found in $LATEST_LOG"
+            exit 1
+        fi
+        # maestro.log line prefix is HH:MM:SS.mmm (e.g., 14:48:42.123)
+        LOG_TIME_STR=$(echo "$LOG_LINE" | grep -oE '^[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]+' | head -1)
+        if [ -z "$LOG_TIME_STR" ]; then
+            echo "Error: could not parse HH:MM:SS.mmm timestamp from log line:"
+            echo "  $LOG_LINE"
+            exit 1
+        fi
+
+        # Convert log HH:MM:SS to today's epoch on macOS (BSD date).
+        TODAY=$(date "+%Y-%m-%d")
+        LOG_HMS="${LOG_TIME_STR%.*}"
+        LOG_FRAC="${LOG_TIME_STR#*.}"
+        LOG_EPOCH_INT=$(date -j -f "%Y-%m-%d %H:%M:%S" "$TODAY $LOG_HMS" "+%s" 2>/dev/null)
+        if [ -z "$LOG_EPOCH_INT" ]; then
+            echo "Error: could not convert log timestamp '$LOG_TIME_STR' to epoch"
+            exit 1
+        fi
+        LOG_EPOCH="${LOG_EPOCH_INT}.${LOG_FRAC}"
+
+        OFFSET=$(echo "$LOG_EPOCH - $REC_START" | bc -l)
+        # Strip any leading "." (bc returns ".5" for 0.5 etc.)
+        case "$OFFSET" in
+          .*) OFFSET="0$OFFSET" ;;
+          -.*) OFFSET="-0${OFFSET#-}" ;;
+        esac
+        if [ "$(echo "$OFFSET < 0" | bc -l)" = "1" ]; then
+            echo "Error: log line is before recording start (offset=${OFFSET}s). Was recording started after the test?"
+            echo "  recording start: $REC_START"
+            echo "  log line time:   $LOG_EPOCH"
+            echo "  log line:        $LOG_LINE"
+            exit 1
+        fi
+
+        echo "Matched log line (truncated):" >&2
+        echo "  $(echo "$LOG_LINE" | cut -c1-120)" >&2
+        echo "Trim offset: ${OFFSET}s" >&2
+
+        ffmpeg -y -i "$TF_INPUT" -ss "$OFFSET" \
+            -vf "scale=1080:-2" -c:v libx264 -preset slow -crf 28 -an \
+            "$TF_OUTPUT" >/dev/null 2>&1
+        if [ ! -s "$TF_OUTPUT" ]; then
+            echo "Error: ffmpeg failed to produce $TF_OUTPUT"
+            exit 1
+        fi
+        echo "$TF_OUTPUT"
+        ;;
+
+    record-trim|rec-trim|rt)
+        # Trim leading seconds off a screen recording (skips app splash / launch
+        # animation so the demo starts at the first interactive screen).
+        # Defaults: input=/tmp/emu-record.mp4, output=/tmp/emu-record-trimmed.mp4, seconds=5.
+        # Re-encodes (CRF 28, scale 1080:-2, no audio) so the output is small enough
+        # for GitHub user-attachments (10MB cap) and the cut starts on a keyframe
+        # (-ss before -i would cut on the nearest preceding keyframe and miss the
+        # right starting point).
+        REC_TRIM_INPUT="${2:-/tmp/emu-record.mp4}"
+        REC_TRIM_OUTPUT="${3:-/tmp/emu-record-trimmed.mp4}"
+        REC_TRIM_SECONDS="${4:-5}"
+        if [ ! -f "$REC_TRIM_INPUT" ]; then
+            echo "Error: input file not found: $REC_TRIM_INPUT"
+            echo "Usage: emu.sh record-trim [input.mp4] [output.mp4] [seconds]"
+            exit 1
+        fi
+        if ! command -v ffmpeg >/dev/null 2>&1; then
+            echo "Error: ffmpeg not found on PATH (brew install ffmpeg)"
+            exit 1
+        fi
+        # -ss AFTER -i = frame-accurate seek (slower decode pass, but precise to
+        # the second). screenrecord uses long GOP intervals, so input-side -ss
+        # would snap forward to the next keyframe and overshoot by 5-10s.
+        ffmpeg -y -i "$REC_TRIM_INPUT" -ss "$REC_TRIM_SECONDS" \
+            -vf "scale=1080:-2" -c:v libx264 -preset slow -crf 28 -an \
+            "$REC_TRIM_OUTPUT" >/dev/null 2>&1
+        if [ ! -f "$REC_TRIM_OUTPUT" ] || [ ! -s "$REC_TRIM_OUTPUT" ]; then
+            echo "Error: ffmpeg failed to produce $REC_TRIM_OUTPUT"
+            exit 1
+        fi
+        echo "$REC_TRIM_OUTPUT"
         ;;
 
     tap|t)
@@ -318,7 +494,7 @@ case "$1" in
         fi
 
         # Start Metro in background with cache reset
-        cd /Users/carlos/Code/SparkPos
+        cd $HOME/Code/SparkPos
         echo "Starting Metro with cache reset..."
         npx react-native start --reset-cache &
         METRO_NEW_PID=$!
@@ -624,8 +800,12 @@ case "$1" in
         PASSWORD="${3:-password}"
         PIN="${4:-5942}"
 
-        # Detect current screen via screencap + dump
-        SCREEN_TEXT=$(timeout 10 $ADB shell uiautomator dump /dev/tty 2>/dev/null || echo "")
+        # Kill Maestro agent if running — it holds UiAutomation and blocks uiautomator dump
+        $ADB shell am force-stop dev.mobile.maestro 2>/dev/null
+        # Detect current screen via file-based dump
+        $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+        SCREEN_TEXT=$($ADB shell cat /sdcard/ui.xml 2>/dev/null || echo "")
+        $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
 
         if echo "$SCREEN_TEXT" | grep -q 'text="Enter PIN"'; then
             # On PIN screen
@@ -637,7 +817,7 @@ case "$1" in
             sleep 5
             echo "PIN entered."
 
-        elif echo "$SCREEN_TEXT" | grep -q 'Restaurant ID'; then
+        elif echo "$SCREEN_TEXT" | grep -q 'login-restaurant-id'; then
             # On login screen
             echo "Logging in with Restaurant ID: $RESTAURANT_ID"
             "$0" tap-id "login-restaurant-id"
@@ -659,7 +839,9 @@ case "$1" in
             sleep 8
 
             # Check if PIN screen appeared after login
-            SCREEN_TEXT2=$(timeout 10 $ADB shell uiautomator dump /dev/tty 2>/dev/null || echo "")
+            $ADB shell uiautomator dump /sdcard/ui.xml 2>/dev/null
+            SCREEN_TEXT2=$($ADB shell cat /sdcard/ui.xml 2>/dev/null || echo "")
+            $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
             if echo "$SCREEN_TEXT2" | grep -q 'text="Enter PIN"'; then
                 echo "PIN screen appeared. Entering PIN: $PIN"
                 for digit in $(echo "$PIN" | grep -o .); do
@@ -893,7 +1075,11 @@ case "$1" in
             sed 's/.*class="\([^"]*\)".*content-desc="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 desc="\2" bounds=\3/' | \
             sed 's/.*class="\([^"]*\)".*text="\([^"]*\)".*bounds="\([^"]*\)".*/  class=\1 text="\2" bounds=\3/' | \
             grep -v "^  $" | head -50
-        rm -f /tmp/ui.xml
+        # Keep the full raw hierarchy on disk as a backup — the printout above is
+        # capped at 50 lines and drops empty desc/text, so inspect this file when
+        # something you expect (e.g. a specific content-desc) is missing above.
+        echo ""
+        echo "Full raw hierarchy saved to: /tmp/ui.xml"
         $ADB shell rm -f /sdcard/ui.xml 2>/dev/null
         ;;
 
@@ -955,7 +1141,7 @@ case "$1" in
         # Don't run this automatically - it takes 2-3 minutes and looks stuck
         echo "To rebuild with clean state, run in a terminal:"
         echo ""
-        echo "  /Users/carlos/Code/spark-agent-tools/run-eiu.sh"
+        echo "  $HOME/Code/spark-agent-tools/run-eiu.sh"
         echo ""
         echo "This takes ~2-3 minutes (clears caches, starts emulator, builds app)."
         ;;
@@ -1198,6 +1384,14 @@ case "$1" in
         echo "Commands:"
         echo "  shot                    - Take screenshot (/tmp/screen.png)"
         echo "  wait-shot [tries] [delay] - Screenshot with retry (default 3 tries, 5s delay)"
+        echo "  record-start            - Start screen recording on emulator (max 180s)"
+        echo "  record-stop             - Stop recording and pull mp4 to /tmp/emu-record.mp4"
+        echo "  record-trim [in] [out] [secs]  - Trim leading seconds (default 5s) off a recording.
+                              Re-encodes for GitHub user-attachments size cap.
+                              Defaults: in=/tmp/emu-record.mp4, out=/tmp/emu-record-trimmed.mp4"
+        echo "  record-trim-from \"<pattern>\" [in] [out]  - Trim a recording to start at the moment
+                              the latest maestro.log first matches <pattern>.
+                              Recording must have been started via record-start."
         echo "  tap <x> <y>             - Tap at coordinates"
         echo "  tap-id <testID>         - Tap element by testID (content-desc)"
         echo "  tap-element <s>.<e>     - Tap element by name from UI map"

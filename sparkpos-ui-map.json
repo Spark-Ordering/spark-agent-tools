@@ -10,7 +10,9 @@
       "elements": {
         "hamburgerMenu": { "bounds": [8, 15, 104, 113], "center": [56, 64] },
         "dineInButton": { "bounds": [512, 144, 1051, 229], "center": [782, 187] },
-        "customItemProduct": { "center": [2366, 292], "note": "Right of Pumpkin Pie in product grid" }
+        "customItemProduct": { "center": [1708, 580], "note": "Second row of product grid (Appetizers), below Crab Rangoon" },
+        "pumpkinPieProduct": { "center": [2042, 277], "note": "Appetizers grid, middle card of top row (develop2 layout)" },
+        "orangeChickenProduct": { "center": [1422, 1189], "note": "develop1 Appetizers grid, bottom row left card" }
       }
     },
     "orderInProgress": {

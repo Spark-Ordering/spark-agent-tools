@@ -12,9 +12,14 @@
 #   sqlite-query.sh --write "DELETE FROM ps_data__draft_menu_versions"
 #   sqlite-query.sh --fresh "SELECT COUNT(*) FROM draft_menu_versions"
 
-PACKAGE="com.starter.paddev"
+PACKAGE="${SPARKPOS_PACKAGE:-com.starter.paddev}"
 DB_PATH="/data/data/$PACKAGE/databases/sparkpos-powersync-v1.db"
 TMP_DB="/tmp/sparkpos-device.db"
+ADB_FLAGS=""
+if [ -n "${ANDROID_SERIAL:-}" ]; then
+  ADB_FLAGS="-s $ANDROID_SERIAL"
+  TMP_DB="/tmp/sparkpos-device-$ANDROID_SERIAL.db"
+fi
 
 WRITE_MODE=false
 FRESH_MODE=false
@@ -68,7 +73,7 @@ if [ "$FRESH_MODE" = false ] && [ "$WRITE_MODE" = false ] && [ -f "$TMP_DB" ]; t
 fi
 
 if [ "$SHOULD_PULL" = true ] || [ "$WRITE_MODE" = true ]; then
-    adb shell "run-as $PACKAGE cat $DB_PATH" > "$TMP_DB" 2>/dev/null
+    adb $ADB_FLAGS shell "run-as $PACKAGE cat $DB_PATH" > "$TMP_DB" 2>/dev/null
 fi
 
 if [ ! -s "$TMP_DB" ]; then
@@ -85,10 +90,10 @@ if [ "$WRITE_MODE" = true ] && [ $RESULT -eq 0 ]; then
     echo "Pushing modified database back to device..."
 
     # Push to a temp location first (can't push directly to app data)
-    adb push "$TMP_DB" /data/local/tmp/sparkpos-modified.db 2>/dev/null
+    adb $ADB_FLAGS push "$TMP_DB" /data/local/tmp/sparkpos-modified.db 2>/dev/null
 
     # Copy into app data using run-as
-    adb shell "run-as $PACKAGE cp /data/local/tmp/sparkpos-modified.db $DB_PATH" 2>/dev/null
+    adb $ADB_FLAGS shell "run-as $PACKAGE cp /data/local/tmp/sparkpos-modified.db $DB_PATH" 2>/dev/null
 
     if [ $? -eq 0 ]; then
         echo "Database updated successfully."
@@ -99,5 +104,5 @@ if [ "$WRITE_MODE" = true ] && [ $RESULT -eq 0 ]; then
     fi
 
     # Cleanup
-    adb shell "rm /data/local/tmp/sparkpos-modified.db" 2>/dev/null
+    adb $ADB_FLAGS shell "rm /data/local/tmp/sparkpos-modified.db" 2>/dev/null
 fi

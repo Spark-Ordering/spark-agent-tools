@@ -11,7 +11,7 @@ if [ $# -eq 0 ]; then
 fi
 
 for PORT in "$@"; do
-  PIDS=$(/usr/sbin/lsof -ti:"$PORT" 2>/dev/null)
+  PIDS=$(lsof -ti:"$PORT" 2>/dev/null)
   if [ -n "$PIDS" ]; then
     echo "$PIDS" | xargs kill -9
     echo "✓ Killed port $PORT (PIDs: $(echo $PIDS | tr '\n' ' '))"

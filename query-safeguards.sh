@@ -29,7 +29,8 @@ extract_where_clause() {
     local query="$1"
     if echo "$query" | grep -iq 'WHERE'; then
         # Use perl for reliable case-insensitive extraction
-        echo "$query" | perl -pe 's/.*\bWHERE\s+//i' | head -1
+        # Strip RETURNING clause (used in UPDATE ... RETURNING)
+        echo "$query" | perl -pe 's/.*\bWHERE\s+//i; s/\s+RETURNING\b.*//i' | head -1
     fi
 }
 
