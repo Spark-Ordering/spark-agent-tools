@@ -50,15 +50,23 @@ done_issues() {
   done
 }
 
-# accountId of whoever made the most recent status change on the issue.
-last_status_change_author() {
-  local key="$1" resp total
+# Emits "<last-author-id>\t<last-non-me-to>" — the accountId of the most recent status
+# change, and the destination status of the most recent non-me status change (empty if none).
+# Second field lets caller respect a "Trent moved this to Done" even after my sweep bounced
+# it and I've since reverted — Trent's move is sticky until Trent (or someone) changes it.
+status_signal() {
+  local key="$1" me="$2" resp total
   resp="$(api GET "/rest/api/3/issue/$key/changelog?maxResults=100")"
   if [ "$(jq -r '.isLast' <<<"$resp")" != "true" ]; then
     total="$(jq -r '.total' <<<"$resp")"
     resp="$(api GET "/rest/api/3/issue/$key/changelog?maxResults=100&startAt=$((total - 100))")"
   fi
-  jq -r '[.values[] | select(any(.items[]; .field == "status"))] | last | .author.accountId // empty' <<<"$resp"
+  jq -r --arg me "$me" '
+    [.values[] | select(any(.items[]; .field == "status"))] as $s
+    | (($s | last // {}) | .author.accountId // "") as $last
+    | (([$s[] | select(.author.accountId != $me) | .items[] | select(.field == "status") | .toString] | last) // "") as $nm
+    | $last + "\t" + $nm
+  ' <<<"$resp"
 }
 
 transition_to_target() {
@@ -149,15 +157,16 @@ main() {
   items="$(done_issues)"
   for item in $items; do
     checked=$((checked + 1))
-    key="${item%%:*}"; claude="${item##*:}"
-    # Move if claude-labelled, else only if I last moved it to Done.
-    # Per-issue failures log and continue: an aborted run here would skip
-    # label_pending_release below (2026-09-01: exit 22 mid-loop did exactly that).
-    if [ "$claude" = "1" ]; then
-      if transition_to_target "$key"; then moved=$((moved + 1)); else log "ERROR $key: transition failed, continuing"; fi
+    key="${item%%:*}"
+    # Move only if I last moved it AND no non-me human's most recent status action was
+    # transitioning it to Done. Per-issue failures log and continue: an aborted run here
+    # would skip label_pending_release below (2026-09-01: exit 22 mid-loop did exactly that).
+    sig="$(status_signal "$key" "$me")" || { log "ERROR $key: changelog fetch failed, continuing"; continue; }
+    author="${sig%%$'\t'*}"; non_me_to="${sig#*$'\t'}"
+    if [ "$non_me_to" = "Done" ]; then
+      log "skip $key: non-me human's last status action was -> Done (respect)"
       continue
     fi
-    author="$(last_status_change_author "$key")" || { log "ERROR $key: changelog fetch failed, continuing"; continue; }
     if [ "$author" = "$me" ]; then
       if transition_to_target "$key"; then moved=$((moved + 1)); else log "ERROR $key: transition failed, continuing"; fi
     fi

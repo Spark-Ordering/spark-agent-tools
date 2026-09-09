@@ -55,8 +55,15 @@ else
     # Validate query before execution (only for remote databases)
     validate_query "$1" "mysql" "$DB_HOST" "$DB_USER" "$DB_PASS" "$DB_NAME"
 
+    # Homebrew mysql 9.x dropped mysql_native_password (stage still needs it); the local
+    # mysql:8.0 container's client has the plugin, so prefer it whenever it is running.
+    MYSQL_CLIENT=(mysql)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx spark-mysql-local; then
+        MYSQL_CLIENT=(docker exec -i spark-mysql-local mysql)
+    fi
+
     run_query() {
-        mysql -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$1" 2>&1 | grep -v "Warning" || true
+        "${MYSQL_CLIENT[@]}" -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" -e "$1" 2>&1 | grep -v "Warning" || true
     }
 
     echo "# Querying: MySQL staging ($DB_HOST)"

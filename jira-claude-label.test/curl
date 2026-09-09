@@ -1,0 +1,21 @@
+#!/bin/bash
+# Fake curl for jira-claude-label.test.sh: routes Jira REST paths to fixtures in $FIXTURES.
+method=GET; body=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift ;;
+    -d) body="$2"; shift ;;
+    -u|-H) shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+path="${url#https://*/}"
+key="${path#rest/api/3/issue/}"; key="${key%%/*}"
+
+case "$method $path" in
+  "GET rest/api/3/search/jql?"*"nextPageToken=") cat "$FIXTURES/page1.json" ;;
+  "GET rest/api/3/search/jql?"*"nextPageToken=TOK2") cat "$FIXTURES/page2.json" ;;
+  "PUT rest/api/3/issue/"*) echo "$key $body" >>"$FIXTURES/labels.log" ;;
+  *) echo "fake curl: unhandled $method $path" >&2; exit 22 ;;
+esac

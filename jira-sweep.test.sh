@@ -72,18 +72,17 @@ echo '{"transitions":[{"id":"31","to":{"name":"Done"}}]}' >"$FIXTURES/transition
 : >"$FIXTURES/calls.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
 grep -q "ERROR ENG-1: no transition to 'Pending Release'" <<<"$out" || fail "ENG-1 should error on missing transition: $out"
-grep -q "done: checked=120 moved=4 labelled=5 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
+grep -q "done: checked=120 moved=3 labelled=5 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
 echo "ok: missing transition logs and continues"
 
 cp "$FIXTURES/transitions-default.json" "$FIXTURES/transitions-ENG-1.json"
 : >"$FIXTURES/calls.log"; : >"$FIXTURES/posts.log"; : >"$FIXTURES/labels.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
-grep -q "done: checked=120 moved=5 labelled=5 dry_run=0" <<<"$out" || fail "expected 5 moves + 5 labels: $out"
+grep -q "done: checked=120 moved=4 labelled=5 dry_run=0" <<<"$out" || fail "expected 4 moves + 5 labels: $out"
 posted="$(cut -d' ' -f1 "$FIXTURES/posts.log" | sort -V | tr '\n' ' ')"
-[ "$posted" = "ENG-1 ENG-2 ENG-3 ENG-51 ENG-120 " ] || fail "posted set wrong: $posted"
+[ "$posted" = "ENG-1 ENG-3 ENG-51 ENG-120 " ] || fail "posted set wrong: $posted"
 grep -q '"id":"4"' "$FIXTURES/posts.log" || fail "transition id should be 4"
-# ENG-2 moves on its label alone, so its changelog is never fetched (119, not 120).
-[ "$(grep -c "changelog?maxResults=100$" "$FIXTURES/calls.log")" = "119" ] || fail "should check 119 changelogs"
+[ "$(grep -c "changelog?maxResults=100$" "$FIXTURES/calls.log")" = "120" ] || fail "should check 120 changelogs"
 echo "ok: pagination, author + label filter, transitions"
 
 # --- version labelling (ENG-2510 + ENG-2562): paginated, skips already-correct, one version label kept

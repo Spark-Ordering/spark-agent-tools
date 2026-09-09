@@ -20,8 +20,9 @@ is_update_query() {
 # UPDATE table_name SET ... -> table_name
 extract_update_table() {
     local query="$1"
-    # Convert to lowercase and extract second word (table name after UPDATE)
-    echo "$query" | tr '[:upper:]' '[:lower:]' | awk '{for(i=1;i<=NF;i++) if($i=="update") {print $(i+1); exit}}' | head -1
+    # Match the UPDATE keyword case-insensitively but keep the table name's case:
+    # MySQL database names are case-sensitive, so `SPARK.franchises` must stay as typed.
+    echo "$query" | awk '{for(i=1;i<=NF;i++) if(tolower($i)=="update") {print $(i+1); exit}}' | head -1
 }
 
 # Extract WHERE clause from query (everything after WHERE keyword)
@@ -62,7 +63,13 @@ run_mysql_count() {
         count_query="$count_query WHERE $where_clause"
     fi
 
-    mysql -h "$host" -u "$user" -p"$pass" "$dbname" -N -e "$count_query" 2>/dev/null | tr -d ' '
+    # Same client choice as mysql-query.sh: Homebrew mysql 9.x lacks mysql_native_password,
+    # the local mysql:8.0 container's client still has it.
+    local -a client=(mysql)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx spark-mysql-local; then
+        client=(docker exec -i spark-mysql-local mysql)
+    fi
+    "${client[@]}" -h "$host" -u "$user" -p"$pass" "$dbname" -N -e "$count_query" 2>/dev/null | tr -d ' '
 }
 
 # Main validation function
