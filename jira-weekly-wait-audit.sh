@@ -27,11 +27,13 @@ Filed every Tuesday 9am by spark-agent-tools/jira-weekly-wait-audit.sh (ENG-2736
 
 Find every place in the apps where a person waits on an outcome and nothing tells us when it is slow: a screen or page painting, data showing up, a tap responding, a payment, a print, a card reader, the cash drawer, any hardware. Look for new ones (code merged since last week's audit ticket) and old ones never covered. Do not stop at a pre-made list.
 
-For each uncovered wait, instrument it the way staff actions already are (startStaffAction / endStaffAction, see /add-datadog-tracking), so the staff_action.latency monitor (datadog/monitors/staff-action-latency.json) tags the team in Slack when it takes more than 1 s. Exceptions are allowed: list each one with its reason in the PR.
+Only add what is missing. A wait that is already instrumented keeps its instrumentation; a case that already has a perf E2E keeps it. Work only on what is not covered yet.
 
-When the wait is performance-based, add a Maestro perf E2E like print-latency, item-open-latency and rapid-tap-latency: run the action at least 10 times in a row and fail if any run takes more than 1 s.
+For each uninstrumented wait, instrument it the way staff actions already are (startStaffAction / endStaffAction, see /add-datadog-tracking), so the staff_action.latency monitor (datadog/monitors/staff-action-latency.json) tags the team in Slack when it takes more than 1 s.
 
-Deliverable: one PR with the instrumentation and E2Es, and a table in the PR body of every wait point found (already covered / covered by this PR / exception + reason). Nothing uncovered found this week = say so on the ticket and close it.
+When the wait is performance-based and has no perf E2E for that case, add a Maestro perf E2E like print-latency, item-open-latency and rapid-tap-latency: run the action at least 10 times in a row and fail if any run takes more than 1 s. One feature can need several perf E2Es when there are different ways to exercise it (e.g. cash vs card, small vs large order); add one per way worth testing.
+
+Deliverable: one PR with the instrumentation and E2Es, and a table in the PR body of every wait point found (already covered / covered by this PR). Nothing uncovered found this week = say so on the ticket and close it.
 EOF
 
 # ADF doc: one paragraph per blank-line-separated block.
