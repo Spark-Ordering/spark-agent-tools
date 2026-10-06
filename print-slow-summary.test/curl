@@ -1,0 +1,6 @@
+#!/bin/bash
+# Fake curl for print-slow-summary.test.sh: logs the request body, serves page1 then page2 by cursor.
+body=""
+while [ $# -gt 0 ]; do [ "$1" = "-d" ] && body="$2"; shift; done
+echo "$body" >>"$FIXTURES/requests.log"
+if [ "$(jq -r '.page.cursor // empty' <<<"$body")" = "CUR2" ]; then cat "$FIXTURES/page2.json"; else cat "$FIXTURES/page1.json"; fi
