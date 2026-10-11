@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.carlos.jira-develop-e2e-ticket</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/carlos/Code/spark-agent-tools/jira-develop-e2e-ticket.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <!-- Fires daily; the script files a ticket only when the last one is 2+ days old. -->
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+  <key>StandardOutPath</key>
+  <string>/Users/carlos/Library/Logs/jira-develop-e2e-ticket.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/carlos/Library/Logs/jira-develop-e2e-ticket.launchd.log</string>
+</dict>
+</plist>
