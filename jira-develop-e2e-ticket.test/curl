@@ -1,0 +1,20 @@
+#!/bin/bash
+# Fake curl for jira-develop-e2e-ticket.test.sh: routes Jira REST paths to fixtures in $FIXTURES.
+method=GET; body=""; url=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -X) method="$2"; shift ;;
+    -d) body="$2"; shift ;;
+    -u|-H) shift ;;
+    https://*) url="$1" ;;
+  esac
+  shift
+done
+path="${url#https://*/}"
+
+case "$method $path" in
+  "GET rest/api/3/search/jql?"*) cat "$FIXTURES/search.json" ;;
+  "GET rest/agile/1.0/board/2/sprint?state=active") echo '{"values":[{"id":4242}]}' ;;
+  "POST rest/api/3/issue") echo "$body" >>"$FIXTURES/created.log"; echo '{"key":"ENG-9999"}' ;;
+  *) echo "fake curl: unhandled $method $path" >&2; exit 22 ;;
+esac
