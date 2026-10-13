@@ -1,14 +1,15 @@
 #!/bin/bash
-# Moves ENG active-sprint tickets that *I* last moved to Done back to Pending Release.
-# Skips Mon 19:00-23:59 (standup). Env: DRY_RUN=1, NOW_OVERRIDE="YYYY-MM-DD HH:MM".
+# Moves ENG active-sprint tickets that *I* last moved to Done back to Pending Release, and a shipped
+# release's tickets on to Pending Client Notification. Skips Mon 19:00-23:59 (standup). Env: DRY_RUN=1, NOW_OVERRIDE.
 set -euo pipefail
 
 source "$HOME/.config/jira-sweep.env"
 TZ_NAME="America/Los_Angeles"
 TARGET_STATUS="Pending Release"
+RELEASED_STATUS="Pending Client Notification"
 JQL='project = ENG AND sprint in openSprints() AND status = Done'
 LABEL_JQL='project = ENG AND sprint in openSprints() AND status = "Pending Release" AND labels = claude'
-SPARKPOS="$HOME/Code/SparkPos"
+SPARKPOS="${SPARKPOS:-$HOME/Code/SparkPos}"   # test override: a non-repo path = no release branch
 VERSION_JSON="${VERSION_JSON:-}"   # test override; default reads origin/develop, not the checkout
 LOG="${JIRA_SWEEP_LOG:-$HOME/Library/Logs/jira-sweep.log}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -69,13 +70,13 @@ status_signal() {
   ' <<<"$resp"
 }
 
-transition_to_target() {
-  local key="$1" id
-  id="$(api GET "/rest/api/3/issue/$key/transitions" | jq -r --arg s "$TARGET_STATUS" '.transitions[] | select(.to.name == $s) | .id')"
-  [ -n "$id" ] || { log "ERROR $key: no transition to '$TARGET_STATUS'"; return 1; }
-  if [ "$DRY_RUN" = "1" ]; then log "DRY_RUN would move $key -> $TARGET_STATUS"; return 0; fi
+transition_to() { # transition_to KEY STATUS
+  local key="$1" status="$2" id
+  id="$(api GET "/rest/api/3/issue/$key/transitions" | jq -r --arg s "$status" '.transitions[] | select(.to.name == $s) | .id')"
+  [ -n "$id" ] || { log "ERROR $key: no transition to '$status'"; return 1; }
+  if [ "$DRY_RUN" = "1" ]; then log "DRY_RUN would move $key -> $status"; return 0; fi
   api POST "/rest/api/3/issue/$key/transitions" "{\"transition\":{\"id\":\"$id\"}}" >/dev/null
-  log "moved $key -> $TARGET_STATUS"
+  log "moved $key -> $status"
 }
 
 # ENG-2510: labels claude tickets in Pending Release with the release in flight — one minor
@@ -150,9 +151,36 @@ label_pending_release() {
   done
 }
 
+# Emits every issue key matching JQL $1 (all pages).
+jql_keys() {
+  local token="" resp
+  while :; do
+    resp="$(api GET "/rest/api/3/search/jql?jql=$(urlencode "$1")&fields=summary&maxResults=100&nextPageToken=$token")"
+    jq -r '.issues[].key' <<<"$resp"
+    token="$(jq -r '.nextPageToken // empty' <<<"$resp")"
+    [ -z "$token" ] && break
+  done
+}
+
+# ENG-2854: once the release's "Release vX.YY" ticket is Done (shipped), its X.YY.X tickets leave
+# Pending Release for Pending Client Notification. Increments caller's `released`.
+move_released() {
+  local label release keys key
+  label="$(version_label)"
+  release="Release v${label%.X}"
+  if [ -z "$(jql_keys "project = ENG AND summary ~ \"\\\"$release\\\"\" AND status = Done")" ]; then
+    log "release $release not Done — no tickets to notify"; return 0
+  fi
+  # Collect first: moving tickets mid-pagination would shift the pages.
+  keys="$(jql_keys "project = ENG AND status = \"$TARGET_STATUS\" AND labels = \"$label\"")"
+  for key in $keys; do
+    if transition_to "$key" "$RELEASED_STATUS"; then released=$((released + 1)); else log "ERROR $key: transition failed, continuing"; fi
+  done
+}
+
 main() {
   if in_standup_window; then log "skip: standup window (Mon 19:00-23:59 $TZ_NAME)"; return 0; fi
-  local me items checked=0 moved=0 labelled=0 item key claude author
+  local me items checked=0 moved=0 labelled=0 released=0 item key claude author
   me="$(api GET /rest/api/3/myself | jq -r '.accountId')"
   items="$(done_issues)"
   for item in $items; do
@@ -168,11 +196,12 @@ main() {
       continue
     fi
     if [ "$author" = "$me" ]; then
-      if transition_to_target "$key"; then moved=$((moved + 1)); else log "ERROR $key: transition failed, continuing"; fi
+      if transition_to "$key" "$TARGET_STATUS"; then moved=$((moved + 1)); else log "ERROR $key: transition failed, continuing"; fi
     fi
   done
   label_pending_release
-  log "done: checked=$checked moved=$moved labelled=$labelled dry_run=$DRY_RUN"
+  move_released
+  log "done: checked=$checked moved=$moved labelled=$labelled released=$released dry_run=$DRY_RUN"
 }
 
 main "$@"

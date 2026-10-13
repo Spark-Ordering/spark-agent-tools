@@ -29,7 +29,11 @@ changelog false 150 "$(hist ME status)"                            >"$FIXTURES/c
 changelog true 150 "$(hist TRENT status)"                          >"$FIXTURES/changelog-ENG-50-last.json"
 changelog false 150 "$(hist TRENT status)"                         >"$FIXTURES/changelog-ENG-51.json"
 changelog true 150 "$(hist ME status)"                             >"$FIXTURES/changelog-ENG-51-last.json"
-echo '{"transitions":[{"id":"31","to":{"name":"Done"}},{"id":"4","to":{"name":"Pending Release"}}]}' >"$FIXTURES/transitions-default.json"
+echo '{"transitions":[{"id":"31","to":{"name":"Done"}},{"id":"4","to":{"name":"Pending Release"}},{"id":"5","to":{"name":"Pending Client Notification"}}]}' >"$FIXTURES/transitions-default.json"
+
+# ENG-2854: "Release v2.07" is Done, so its 2.07.X tickets ENG-301/302 move to Pending Client Notification.
+echo '{"issues":[{"key":"ENG-900"}],"isLast":true}' >"$FIXTURES/release.json"
+echo '{"issues":[{"key":"ENG-301"},{"key":"ENG-302"}],"isLast":true}' >"$FIXTURES/released.json"
 
 # ENG-2510 labelling: ENG-201 needs the label, ENG-202 already has it, ENG-203 on page 2.
 # ENG-2562: ENG-204 has a stale 2.06.X (add + drop), ENG-205 has current + two stale (drop only),
@@ -37,6 +41,7 @@ echo '{"transitions":[{"id":"31","to":{"name":"Done"}},{"id":"4","to":{"name":"P
 # version.json 2.08.02 = develop already bumped past the pending 2.07 release -> label 2.07.X.
 echo '{"version":"2.08.02","versionCode":20802}' >"$FIXTURES/version.json"
 export VERSION_JSON="$FIXTURES/version.json"
+export SPARKPOS="$FIXTURES"   # not a repo: no release branch, so labelling is not gated by the real SparkPos
 jq -cn '{issues: [{key:"ENG-201",fields:{labels:["claude"]}},{key:"ENG-202",fields:{labels:["claude","2.07.X"]}},
                   {key:"ENG-204",fields:{labels:["claude","2.06.X"]}},{key:"ENG-205",fields:{labels:["2.05.X","claude","2.07.X","2.06.X"]}},
                   {key:"ENG-206",fields:{labels:["claude","2.08.X"]}}], nextPageToken:"TOKP2", isLast:false}' >"$FIXTURES/pending-page1.json"
@@ -72,16 +77,15 @@ echo '{"transitions":[{"id":"31","to":{"name":"Done"}}]}' >"$FIXTURES/transition
 : >"$FIXTURES/calls.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
 grep -q "ERROR ENG-1: no transition to 'Pending Release'" <<<"$out" || fail "ENG-1 should error on missing transition: $out"
-grep -q "done: checked=120 moved=3 labelled=5 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
+grep -q "done: checked=120 moved=3 labelled=5 released=2 dry_run=0" <<<"$out" || fail "run should continue past ENG-1: $out"
 echo "ok: missing transition logs and continues"
 
 cp "$FIXTURES/transitions-default.json" "$FIXTURES/transitions-ENG-1.json"
 : >"$FIXTURES/calls.log"; : >"$FIXTURES/posts.log"; : >"$FIXTURES/labels.log"
 out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
-grep -q "done: checked=120 moved=4 labelled=5 dry_run=0" <<<"$out" || fail "expected 4 moves + 5 labels: $out"
-posted="$(cut -d' ' -f1 "$FIXTURES/posts.log" | sort -V | tr '\n' ' ')"
+grep -q "done: checked=120 moved=4 labelled=5 released=2 dry_run=0" <<<"$out" || fail "expected 4 moves + 5 labels: $out"
+posted="$(grep '"id":"4"' "$FIXTURES/posts.log" | cut -d' ' -f1 | sort -V | tr '\n' ' ')"
 [ "$posted" = "ENG-1 ENG-3 ENG-51 ENG-120 " ] || fail "posted set wrong: $posted"
-grep -q '"id":"4"' "$FIXTURES/posts.log" || fail "transition id should be 4"
 [ "$(grep -c "changelog?maxResults=100$" "$FIXTURES/calls.log")" = "120" ] || fail "should check 120 changelogs"
 echo "ok: pagination, author + label filter, transitions"
 
@@ -94,6 +98,19 @@ grep -q '^ENG-204 {"update":{"labels":\[{"add":"2.07.X"},{"remove":"2.06.X"}\]}}
 grep -q '^ENG-205 {"update":{"labels":\[{"remove":"2.05.X"},{"remove":"2.06.X"}\]}}$' "$FIXTURES/labels.log" || fail "ENG-205 body wrong"
 grep -q "dropped 2.05.X,2.06.X" "$JIRA_SWEEP_LOG" || fail "ENG-205 drop should be logged"
 echo "ok: version labelling"
+
+# --- shipped release moves its tickets (ENG-2854) ----------------------------
+notified="$(grep '"id":"5"' "$FIXTURES/posts.log" | cut -d' ' -f1 | sort -V | tr '\n' ' ')"
+[ "$notified" = "ENG-301 ENG-302 " ] || fail "released set wrong: $notified"
+grep -q "moved ENG-301 -> Pending Client Notification" "$JIRA_SWEEP_LOG" || fail "ENG-301 move should be logged"
+
+echo '{"issues":[],"isLast":true}' >"$FIXTURES/release.json"   # release not shipped yet
+: >"$FIXTURES/posts.log"
+out="$(NOW_OVERRIDE="2026-08-25 10:00" bash "$SWEEP")"
+grep -q "release Release v2.07 not Done" <<<"$out" || fail "unshipped release should be logged: $out"
+grep -q "released=0 dry_run=0" <<<"$out" || fail "unshipped release should move nothing: $out"
+! grep -q '"id":"5"' "$FIXTURES/posts.log" || fail "unshipped release posted a move"
+echo "ok: shipped release moves its tickets"
 
 rm -rf "$FIXTURES"
 echo "ALL OK"

@@ -16,6 +16,8 @@ key="${path#rest/api/3/issue/}"; key="${key%%/*}"
 
 case "$method $path" in
   "GET rest/api/3/myself") echo '{"accountId":"ME"}' ;;
+  "GET rest/api/3/search/jql?"*"Release%20v"*) cat "$FIXTURES/release.json" ;;
+  "GET rest/api/3/search/jql?"*"%222.07.X%22"*) cat "$FIXTURES/released.json" ;;
   "GET rest/api/3/search/jql?"*"Pending%20Release"*"nextPageToken=") cat "$FIXTURES/pending-page1.json" ;;
   "GET rest/api/3/search/jql?"*"Pending%20Release"*"nextPageToken=TOKP2") cat "$FIXTURES/pending-page2.json" ;;
   "GET rest/api/3/search/jql?"*"nextPageToken=") cat "$FIXTURES/search-page1.json" ;;
