@@ -1,0 +1,10 @@
+#!/bin/bash
+# Fake curl: logs args, answers the stage root with codes from $FIXTURES/codes (one per call), API with $FIXTURES/body.
+echo "$*" >>"$FIXTURES/curl.log"
+case "$*" in
+  *"www.spark-stage.com/"*)
+    code="$(head -1 "$FIXTURES/codes")"; tail -n +2 "$FIXTURES/codes" >"$FIXTURES/codes.next"; mv "$FIXTURES/codes.next" "$FIXTURES/codes"
+    printf '%s' "$code" ;;
+  *"/e2e/heartbeat"*) ;;
+  *) cat "$FIXTURES/body" ;;
+esac

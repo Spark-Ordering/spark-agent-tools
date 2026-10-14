@@ -38,6 +38,15 @@ Convenient wrappers for querying Spark databases.
 - Loads credentials from `.env.local` automatically
 - Works from any directory
 
+### stage-backend - Stage spark_backend on/off (Stage only)
+
+```bash
+./stage-backend.sh start --wait   # www.spark-stage.com back up (~10-20 min)
+./stage-backend.sh stop
+```
+
+Why agents need it, scoping, and the one-time key setup: [docs/stage-backend.md](docs/stage-backend.md).
+
 ## Installation
 
 ```bash
