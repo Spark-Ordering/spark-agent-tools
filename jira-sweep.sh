@@ -1,12 +1,12 @@
 #!/bin/bash
 # Moves ENG active-sprint tickets that *I* last moved to Done back to Pending Release, and a shipped
-# release's tickets on to Pending Client Notification. Skips Mon 19:00-23:59 (standup). Env: DRY_RUN=1, NOW_OVERRIDE.
+# release's tickets on to Done. Skips Mon 19:00-23:59 (standup). Env: DRY_RUN=1, NOW_OVERRIDE.
 set -euo pipefail
 
 source "$HOME/.config/jira-sweep.env"
 TZ_NAME="America/Los_Angeles"
 TARGET_STATUS="Pending Release"
-RELEASED_STATUS="Pending Client Notification"
+RELEASED_STATUS="Done"
 JQL='project = ENG AND sprint in openSprints() AND status = Done'
 LABEL_JQL='project = ENG AND sprint in openSprints() AND status = "Pending Release" AND labels = claude'
 SPARKPOS="${SPARKPOS:-$HOME/Code/SparkPos}"   # test override: a non-repo path = no release branch
@@ -40,12 +40,13 @@ api() { # api METHOD PATH [JSON_BODY]
 
 urlencode() { jq -rn --arg s "$1" '$s|@uri'; }
 
-# Emits "KEY:claudeFlag" per Done issue (flag 1 if labelled "claude"), paginating.
+# Emits "KEY:shippedFlag" per Done issue, paginating. 1 = it carries a version label, so its
+# release shipped (move_released put it in Done): never bounce it back to Pending Release.
 done_issues() {
   local token="" resp
   while :; do
     resp="$(api GET "/rest/api/3/search/jql?jql=$(urlencode "$JQL")&fields=labels&maxResults=100&nextPageToken=$token")"
-    jq -r '.issues[] | .key + ":" + (if (.fields.labels // [] | index("claude")) then "1" else "0" end)' <<<"$resp"
+    jq -r '.issues[] | .key + ":" + (if any(.fields.labels // [] | .[]; test("^[0-9]+\\.[0-9]+\\.X$")) then "1" else "0" end)' <<<"$resp"
     token="$(jq -r '.nextPageToken // empty' <<<"$resp")"
     [ -z "$token" ] && break
   done
@@ -163,7 +164,7 @@ jql_keys() {
 }
 
 # ENG-2854: once the release's "Release vX.YY" ticket is Done (shipped), its X.YY.X tickets leave
-# Pending Release for Pending Client Notification. Increments caller's `released`.
+# Pending Release for Done. Increments caller's `released`.
 move_released() {
   local label release keys key
   label="$(version_label)"
@@ -180,12 +181,13 @@ move_released() {
 
 main() {
   if in_standup_window; then log "skip: standup window (Mon 19:00-23:59 $TZ_NAME)"; return 0; fi
-  local me items checked=0 moved=0 labelled=0 released=0 item key claude author
+  local me items checked=0 moved=0 labelled=0 released=0 item key author
   me="$(api GET /rest/api/3/myself | jq -r '.accountId')"
   items="$(done_issues)"
   for item in $items; do
     checked=$((checked + 1))
     key="${item%%:*}"
+    if [ "${item##*:}" = "1" ]; then log "skip $key: shipped (version label)"; continue; fi
     # Move only if I last moved it AND no non-me human's most recent status action was
     # transitioning it to Done. Per-issue failures log and continue: an aborted run here
     # would skip label_pending_release below (2026-09-01: exit 22 mid-loop did exactly that).
