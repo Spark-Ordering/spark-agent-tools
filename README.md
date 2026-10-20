@@ -24,6 +24,11 @@ Quick command to build and run Spark backend services from source with auto-rest
 - Repositories must have `.env.local` file with credentials
 - Git remote URL must end with `spark_backend.git` or `RequestManager.git`
 
+### aws-2fa.sh - One Stage AWS Command, Approved by Carlos
+
+`aws-2fa.sh "<why>" -- <command...>` runs one command with the Stage-only `sparkpos-ops`
+profile after Carlos approves a device-code login from his phone. See `docs/aws-2fa.md`.
+
 ### Database Query Tools
 
 Convenient wrappers for querying Spark databases.
