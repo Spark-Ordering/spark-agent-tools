@@ -1,0 +1,14 @@
+#!/bin/bash
+# Fake aws CLI: logs each call; describe-environments answers from $FIXTURES/label (or FAKE_STUCK_ENV).
+echo "$*" >>"$FIXTURES/aws.log"
+arg_after() { local prev=""; for a in "$@"; do [ "$prev" = "$FLAG" ] && { echo "$a"; return; }; prev="$a"; done; }
+case "$*" in
+  *"--query Environments[0].ApplicationName"*) echo "Spark Ordering" ;;
+  *"describe-environments --environment-names"*VersionLabel*)
+    env="$(FLAG=--environment-names arg_after "$@")"
+    label="$(cat "$FIXTURES/label" 2>/dev/null || echo Version2.42.07)"
+    [ "$env" = "${FAKE_STUCK_ENV:-}" ] && label=Version2.42.07
+    printf '%s\tReady\tGreen\n' "$label" ;;
+  *"create-application-version"*) FLAG=--version-label arg_after "$@" >"$FIXTURES/label" ;;
+  *"s3 cp"*) cp "$4" "$FIXTURES/uploaded.zip" ;;
+esac

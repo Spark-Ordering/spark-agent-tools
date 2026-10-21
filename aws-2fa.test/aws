@@ -1,0 +1,15 @@
+#!/bin/bash
+# Fake aws CLI: records every call; FAKE_ROLE / FAKE_LOGIN_RC steer configure + sso login.
+printf 'aws %s | AWS_PROFILE=%s\n' "$*" "${AWS_PROFILE:-}" >>"$FIXTURES/aws.log"
+case "$1 $2" in
+  "configure get") echo "${FAKE_ROLE:-StageOps}" ;;
+  "sso login")
+    echo "Browser will not be automatically opened."
+    echo "Please visit the following URL: https://d-9a67.awsapps.com/start/#/device?user_code=ABCD-EFGH"
+    echo "Then enter the code: ABCD-EFGH"
+    sleep 0.3
+    exit "${FAKE_LOGIN_RC:-0}"
+    ;;
+  "sso logout") ;;
+  *) exit "${FAKE_CMD_RC:-0}" ;;
+esac
