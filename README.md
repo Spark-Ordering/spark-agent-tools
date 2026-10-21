@@ -29,6 +29,12 @@ Quick command to build and run Spark backend services from source with auto-rest
 `aws-2fa.sh "<why>" -- <command...>` runs one command with the Stage-only `sparkpos-ops`
 profile after Carlos approves a device-code login from his phone. See `docs/aws-2fa.md`.
 
+### stage-deploy.sh - Deploy a spark_backend Branch to Stage
+
+`stage-deploy.sh <branch|PR#> [Stage1|Stage2]` builds the branch in a throwaway worktree and
+deploys it to the web + worker EB envs with one `aws-2fa.sh` approval. Replaces awui + YubiKey.
+See `docs/stage-deploy.md`.
+
 ### Database Query Tools
 
 Convenient wrappers for querying Spark databases.

@@ -1,0 +1,3 @@
+#!/bin/bash
+echo "$*" >>"$FIXTURES/gh.log"
+echo "cborde/ENG-2915/auth-amount-check"
