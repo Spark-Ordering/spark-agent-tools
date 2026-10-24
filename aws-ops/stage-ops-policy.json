@@ -1,0 +1,111 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadEverythingEbNeedsToShow",
+      "Effect": "Allow",
+      "Action": [
+        "elasticbeanstalk:Describe*",
+        "elasticbeanstalk:List*",
+        "elasticbeanstalk:Check*",
+        "elasticbeanstalk:RetrieveEnvironmentInfo",
+        "cloudformation:Describe*",
+        "cloudformation:List*",
+        "cloudformation:Get*",
+        "ec2:Describe*",
+        "autoscaling:Describe*",
+        "elasticloadbalancing:Describe*",
+        "cloudwatch:Describe*",
+        "cloudwatch:Get*",
+        "cloudwatch:List*",
+        "logs:Describe*",
+        "logs:Get*",
+        "logs:FilterLogEvents",
+        "s3:ListAllMyBuckets",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "WriteOnlyStageEnvironments",
+      "Effect": "Allow",
+      "Action": [
+        "elasticbeanstalk:UpdateEnvironment",
+        "elasticbeanstalk:RestartAppServer",
+        "elasticbeanstalk:RebuildEnvironment",
+        "elasticbeanstalk:RequestEnvironmentInfo",
+        "elasticbeanstalk:AbortEnvironmentUpdate"
+      ],
+      "Resource": "arn:aws:elasticbeanstalk:us-east-2:716429146716:environment/*/Stage*"
+    },
+    {
+      "Sid": "AppVersionsForStageDeploys",
+      "Effect": "Allow",
+      "Action": [
+        "elasticbeanstalk:CreateApplicationVersion",
+        "elasticbeanstalk:CreateStorageLocation"
+      ],
+      "Resource": [
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:application/*",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:applicationversion/*/*",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:storage/*"
+      ]
+    },
+    {
+      "Sid": "EbBucket",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:GetBucketPolicy",
+        "s3:GetObjectAcl",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::elasticbeanstalk-us-east-2-716429146716",
+        "arn:aws:s3:::elasticbeanstalk-us-east-2-716429146716/*"
+      ]
+    },
+    {
+      "Sid": "EbStackWritesOnlyOnStageTaggedResources",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:UpdateStack",
+        "cloudformation:CancelUpdateStack",
+        "cloudformation:ContinueUpdateRollback",
+        "autoscaling:UpdateAutoScalingGroup",
+        "autoscaling:SetDesiredCapacity",
+        "autoscaling:SuspendProcesses",
+        "autoscaling:ResumeProcesses",
+        "autoscaling:TerminateInstanceInAutoScalingGroup",
+        "autoscaling:PutScheduledUpdateGroupAction",
+        "autoscaling:DeleteScheduledAction",
+        "ec2:RebootInstances",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:TerminateInstances",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:ResourceTag/elasticbeanstalk:environment-name": "Stage*"
+        }
+      }
+    },
+    {
+      "Sid": "PassOnlyTheEbRoles",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::716429146716:role/aws-elasticbeanstalk-ec2-role",
+        "arn:aws:iam::716429146716:role/aws-elasticbeanstalk-service-role"
+      ]
+    }
+  ]
+}
