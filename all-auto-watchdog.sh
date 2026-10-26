@@ -1,6 +1,6 @@
 #!/bin/bash
-# Hourly (launchd com.carlos.all-auto-watchdog): if no Claude session holds an active /all-auto
-# goal, or the newest such session has been silent for over an hour, tag Carlos in #engineering.
+# Hourly (launchd com.carlos.all-auto-watchdog): if the newest /all-auto session's last assistant
+# text is over an hour old (or none exists), tag Carlos in #engineering.
 # Env: DRY_RUN=1, PROJECTS_GLOB, NOW_EPOCH, SLACK_BOT, STALE_SECONDS. ENG-2648.
 set -euo pipefail
 
@@ -18,33 +18,37 @@ now_epoch() {
   if [ -n "${NOW_EPOCH:-}" ]; then echo "$NOW_EPOCH"; else date +%s; fi
 }
 
-# The goal a transcript currently holds: the args of its LAST /goal command ("" when none / cleared).
-# Only real user command messages count — tool calls and results that quote the marker are ignored.
-current_goal() {
+# True when a real user message (string content, not a tool result) invoked /all-auto.
+# /all-auto sessions never set /goal (start-loops and handoffs pass "/all-auto" as the prompt).
+invoked_all_auto() {
   local file="$1"
-  grep -a 'command-name>/goal</command-name>' "$file" \
-    | jq -r 'select(.type == "user")
-        | .message.content
-        | if type == "string" then . else (map(select(.type == "text") | .text) | join("")) end
-        | select(test("^\\s*<command-name>/goal</command-name>"))
-        | capture("<command-args>(?<a>.*)</command-args>"; "s").a' 2>/dev/null \
-    | tail -1 \
-    | sed -E 's/^"//; s/"$//'
+  grep -a 'command-name>/all-auto</command-name>' "$file" \
+    | jq -e -s 'any(.[]; .type == "user" and (.message.content | type == "string")
+        and (.message.content | test("<command-name>/all-auto</command-name>")))' >/dev/null 2>&1
 }
 
-# Prints "<mtime-epoch>\t<file>" for every transcript whose current goal names /all-auto.
+# Epoch of the last assistant message carrying non-empty text; 0 when none. Never file mtime:
+# the harness rewrites the transcript every few minutes with no new messages (2026-09-09 stall).
+last_text_epoch() {
+  local file="$1" ts
+  ts="$(grep -a '"type":"assistant"' "$file" \
+    | jq -r 'select(.message.content | type == "array")
+        | select(any(.message.content[]; .type == "text" and (.text | length) > 0))
+        | .timestamp // empty' 2>/dev/null \
+    | tail -1)"
+  if [ -z "$ts" ]; then echo 0; return; fi
+  TZ=UTC date -j -f '%Y-%m-%dT%H:%M:%S' "${ts%%.*}" +%s
+}
+
+# Prints "<last-text-epoch>\t<file>" for every transcript touched in the last 3 days that ran /all-auto.
 active_all_auto_sessions() {
-  local file goal
+  local file cutoff
+  cutoff=$(( $(now_epoch) - 259200 ))
   for file in $PROJECTS_GLOB; do
     [ -f "$file" ] || continue
-    grep -aq 'command-name>/goal</command-name>' "$file" || continue
-    goal="$(current_goal "$file")"
-    case "$goal" in
-      clear|"") continue ;;
-    esac
-    case "$goal" in
-      *all-auto*) printf '%s\t%s\n' "$(stat -f '%m' "$file")" "$file" ;;
-    esac
+    [ "$(stat -f '%m' "$file")" -gt "$cutoff" ] || continue
+    invoked_all_auto "$file" || continue
+    printf '%s\t%s\n' "$(last_text_epoch "$file")" "$file"
   done
 }
 
@@ -59,18 +63,18 @@ main() {
   local newest
   newest="$(active_all_auto_sessions | sort -rn | head -1)"
   if [ -z "$newest" ]; then
-    alert "no Claude session holds an active /all-auto goal — the loop is not running. Fix it now."
+    alert "no Claude session has run /all-auto in the last 3 days — the loop is not running. Fix it now."
     return
   fi
-  local mtime file age
-  mtime="${newest%%	*}"
+  local last file age
+  last="${newest%%	*}"
   file="${newest#*	}"
-  age=$(( $(now_epoch) - mtime ))
+  age=$(( $(now_epoch) - last ))
   if [ "$age" -gt "$STALE_SECONDS" ]; then
-    alert "the /all-auto session $(basename "$file" .jsonl) last wrote $((age / 60)) min ago — the loop has stalled. Fix it now."
+    alert "the /all-auto session $(basename "$file" .jsonl) last posted a message $((age / 60)) min ago — the loop has stalled. Fix it now."
     return
   fi
-  log "ok: $(basename "$file" .jsonl) active, last write $((age / 60)) min ago"
+  log "ok: $(basename "$file" .jsonl) active, last message $((age / 60)) min ago"
 }
 
 main
