@@ -1,12 +1,12 @@
 #!/bin/bash
-# Deploy a spark_backend git ref to the spark-backend-e2e EB env (ENG-2914), no YubiKey.
-# Usage: deploy-spark-backend-e2e.sh [--ref <git-ref>] [--dry-run]   (default ref: HEAD)
+# Deploy a spark_backend git ref to the Stage-agent EB env (ENG-2914, renamed in ENG-2975), no YubiKey.
+# Usage: deploy-stage-agent.sh [--ref <git-ref>] [--dry-run]   (default ref: HEAD)
 # Uses the deployer key from Infisical via creds.sh; never prints it.
 set -euo pipefail
 
 REGION=us-east-2
 APP="Spark Ordering"
-ENV_NAME=spark-backend-e2e
+ENV_NAME=Stage-agent
 BUCKET=elasticbeanstalk-us-east-2-716429146716
 SPB_DIR="${SPB_DIR:-$HOME/Code/spark_backend}"
 CREDS="$HOME/Code/SparkPos/scripts/creds.sh"

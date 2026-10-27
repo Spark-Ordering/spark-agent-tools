@@ -1,0 +1,51 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["elasticbeanstalk:CreateApplicationVersion"],
+      "Resource": [
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:application/Spark Ordering",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:applicationversion/Spark Ordering/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["elasticbeanstalk:DeleteApplicationVersion"],
+      "Resource": "arn:aws:elasticbeanstalk:us-east-2:716429146716:applicationversion/Spark Ordering/e2e-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["elasticbeanstalk:UpdateEnvironment", "elasticbeanstalk:RequestEnvironmentInfo", "elasticbeanstalk:RetrieveEnvironmentInfo"],
+      "Resource": [
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:environment/Spark Ordering/Stage-agent",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:applicationversion/Spark Ordering/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["elasticbeanstalk:Describe*", "elasticbeanstalk:List*", "ec2:Describe*", "autoscaling:Describe*", "elasticloadbalancing:Describe*", "cloudformation:Describe*", "cloudformation:GetTemplate"],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["cloudformation:UpdateStack", "cloudformation:CancelUpdateStack"],
+      "Resource": "arn:aws:cloudformation:us-east-2:716429146716:stack/awseb-e-*",
+      "Condition": {"StringEquals": {"aws:ResourceTag/elasticbeanstalk:environment-name": "Stage-agent"}}
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["autoscaling:SuspendProcesses", "autoscaling:ResumeProcesses", "autoscaling:UpdateAutoScalingGroup"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"autoscaling:ResourceTag/elasticbeanstalk:environment-name": "Stage-agent"}}
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:GetObjectAcl", "s3:PutObjectAcl", "s3:ListBucket", "s3:GetBucketLocation", "s3:GetBucketPolicy"],
+      "Resource": [
+        "arn:aws:s3:::elasticbeanstalk-us-east-2-716429146716",
+        "arn:aws:s3:::elasticbeanstalk-us-east-2-716429146716/*"
+      ]
+    }
+  ]
+}
