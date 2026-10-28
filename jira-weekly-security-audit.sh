@@ -24,6 +24,8 @@ api() { # api METHOD PATH [JSON_BODY]
 urlencode() { jq -rn --arg s "$1" '$s|@uri'; }
 
 read -r -d '' DESCRIPTION <<'EOF' || true
+Auto-merge: No. This PR is not auto merged: /pr-thread-watcher arms the merge only after a human ✅ on the #prs post, never on silence.
+
 Filed every Wednesday 9am by spark-agent-tools/jira-weekly-security-audit.sh (ENG-2948). Find the security holes in SparkPos and fix every one of them in this ticket's PR, this week.
 
 Run the vendored Cloudflare skill in FULL AUDIT MODE on the SparkPos repo (develop at the time you start): Skill(security-audit), "standard" profile, output in its default directory ~/security-audit-skill/SparkPos/run-<N> (outside the repo, never committed). This ticket is the explicit request for the complete workflow, so do not stop to ask which mode or which directory. Earlier runs in that directory are the baseline: re-check their findings against the current code and give the code merged since the last run the closest look.
