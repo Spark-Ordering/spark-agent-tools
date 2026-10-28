@@ -1,8 +1,12 @@
 #!/bin/bash
 # Idempotent: the Stage-agent EB env on SharedLB + its deploy-only IAM user; the old spark-backend-e2e env gone (ENG-2975).
-# Needs admin MFA creds (one YubiKey touch): cd ~/Code/spark-agent-tools && ~/Code/awui/mfa-aws.sh bash aws-ops/stage-agent-env.sh
+# Runs under the phone-approved StageOps profile (aws-ops/stage-ops-policy.json), no YubiKey:
+#   cd ~/Code/spark-agent-tools && bash aws-2fa.sh "ENG-2975 create Stage-agent, terminate spark-backend-e2e" -- bash aws-ops/stage-agent-env.sh
+# --dry-run only reads and prints what a real run would do.
 set -euo pipefail
 export AWS_DEFAULT_REGION=us-east-2
+DRY_RUN=0
+[ "${1:-}" = "--dry-run" ] && DRY_RUN=1
 
 APP="Spark Ordering"
 ENV_NAME=Stage-agent
@@ -21,6 +25,16 @@ env_field() {
 wait_status() {
   until [ "$(env_field "$1" Status)" = "$2" ]; do sleep 20; done
 }
+
+if [ "$DRY_RUN" = 1 ]; then
+  if aws iam get-user --user-name "$OLD_DEPLOYER" > /dev/null 2>&1; then
+    echo "[dry-run] IAM user $OLD_DEPLOYER exists: would rename to $DEPLOYER"
+  fi
+  echo "[dry-run] put-user-policy eb-e2e-deploy on $DEPLOYER from $POLICY"
+  echo "[dry-run] $ENV_NAME status: $(env_field "$ENV_NAME" Status) (None = would be created from $OLD_ENV version $(env_field "$OLD_ENV" VersionLabel))"
+  echo "[dry-run] $OLD_ENV status: $(env_field "$OLD_ENV" Status) (anything but None = would be terminated after $ENV_NAME is Ready)"
+  exit 0
+fi
 
 # IAM first, so the deploy key can act on Stage-agent the moment it exists. A rename keeps the access key.
 if aws iam get-user --user-name "$OLD_DEPLOYER" > /dev/null 2>&1; then

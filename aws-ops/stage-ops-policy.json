@@ -99,6 +99,82 @@
       }
     },
     {
+      "Sid": "StageAgentEnvCreateAndTerminate",
+      "Effect": "Allow",
+      "Action": [
+        "elasticbeanstalk:CreateEnvironment",
+        "elasticbeanstalk:TerminateEnvironment"
+      ],
+      "Resource": [
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:environment/Spark Ordering/Stage-agent",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:environment/Spark Ordering/spark-backend-e2e",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:application/Spark Ordering",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:applicationversion/Spark Ordering/*",
+        "arn:aws:elasticbeanstalk:us-east-2:716429146716:configurationtemplate/Spark Ordering/*"
+      ]
+    },
+    {
+      "Sid": "EbEnvCreateSupport",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "ec2:CreateSecurityGroup",
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:RunInstances",
+        "ec2:CreateTags",
+        "autoscaling:CreateAutoScalingGroup",
+        "autoscaling:CreateLaunchConfiguration",
+        "autoscaling:CreateOrUpdateTags",
+        "autoscaling:PutScalingPolicy",
+        "autoscaling:PutNotificationConfiguration",
+        "elasticloadbalancing:CreateRule",
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:ModifyRule",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:SetRulePriorities",
+        "elasticloadbalancing:AddTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EbEnvTeardownOnlyOldE2eAndStageAgent",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:DeleteStack",
+        "autoscaling:DeleteAutoScalingGroup",
+        "autoscaling:DeleteLaunchConfiguration",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteLaunchTemplate",
+        "elasticloadbalancing:DeleteRule",
+        "elasticloadbalancing:DeleteTargetGroup"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/elasticbeanstalk:environment-name": ["Stage-agent", "spark-backend-e2e"]
+        }
+      }
+    },
+    {
+      "Sid": "StageAgentDeployerIamUser",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser",
+        "iam:UpdateUser",
+        "iam:GetUserPolicy",
+        "iam:ListUserPolicies",
+        "iam:PutUserPolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::716429146716:user/stage-agent-deployer",
+        "arn:aws:iam::716429146716:user/spark-backend-e2e-deployer"
+      ]
+    },
+    {
       "Sid": "PassOnlyTheEbRoles",
       "Effect": "Allow",
       "Action": "iam:PassRole",
