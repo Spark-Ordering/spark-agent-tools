@@ -20,7 +20,20 @@ mkdir -p "$FIXTURES/projects/-Users-carlos"
 goal_line() { # goal_line ARGS -> one transcript line carrying a /goal command
   printf '{"type":"user","message":{"content":"<command-name>/goal</command-name><command-message>goal</command-message><command-args>%s</command-args>"}}\n' "$1"
 }
-transcript() { # transcript NAME MTIME_EPOCH LINE...
+invoke_line() { # invoke_line CMD -> a real user message invoking that slash command
+  printf '{"type":"user","message":{"content":"<command-name>/%s</command-name><command-message>%s</command-message>"}}\n' "$1" "$1"
+}
+tool_result_line() { # a tool result that merely mentions /all-auto (array content) must not count
+  printf '{"type":"user","message":{"content":[{"type":"tool_result","content":"<command-name>/all-auto</command-name>"}]}}\n'
+}
+iso() { TZ=UTC date -r "$1" +%Y-%m-%dT%H:%M:%S.000Z; }
+text_line() { # text_line EPOCH -> an assistant message with text at that time
+  printf '{"type":"assistant","timestamp":"%s","message":{"content":[{"type":"text","text":"No change"}]}}\n' "$(iso "$1")"
+}
+tool_line() { # tool_line EPOCH -> an assistant tool_use record (no text) at that time
+  printf '{"type":"assistant","timestamp":"%s","message":{"content":[{"type":"tool_use","name":"Bash"}]}}\n' "$(iso "$1")"
+}
+transcript() { # transcript NAME MTIME_EPOCH LINE...   (mtime is set but must be ignored)
   local name="$1" mtime="$2"; shift 2
   local file="$FIXTURES/projects/-Users-carlos/$name.jsonl"
   printf '%s\n' "$@" >"$file"
@@ -35,31 +48,46 @@ reset; run
 grep -q "not running" "$(dirname "$SLACK_BOT")/posts.log" || fail "no session should alert"
 grep -q "<@U0516TWQHGD>" "$(dirname "$SLACK_BOT")/posts.log" || fail "alert must tag Carlos"
 
-# 2. Fresh /all-auto goal (10 min old) -> no alert.
-reset; transcript fresh $((NOW_EPOCH - 600)) "$(goal_line 'run /all-auto continuously')"; run
+# 2. Fresh /all-auto invocation, assistant text 10 min ago -> no alert.
+reset; transcript fresh $((NOW_EPOCH - 600)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 600)))"; run
 [ -z "$(posts)" ] || fail "fresh session must not alert: $(posts)"
 
-# 3. Stale /all-auto goal (2h old) -> alert "stalled".
-reset; transcript stale $((NOW_EPOCH - 7200)) "$(goal_line 'run /all-auto continuously')"; run
-grep -q "stalled" "$(posts)" 2>/dev/null || posts | grep -q "stalled" || fail "stale session should alert"
+# 3. Last assistant text 2h old -> alert "stalled".
+reset; transcript stale $((NOW_EPOCH - 7200)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 7200)))"; run
+posts | grep -q "stalled" || fail "stale session should alert"
 posts | grep -q "120 min ago" || fail "alert should say how long ago: $(posts)"
 
-# 4. Goal later cleared -> treated as no session -> alert.
-reset; transcript cleared $((NOW_EPOCH - 60)) "$(goal_line 'run /all-auto continuously')" "$(goal_line 'clear')"; run
-posts | grep -q "not running" || fail "cleared goal should alert"
+# 4. A /goal naming /all-auto, or a tool result quoting it, is not an invocation -> alert.
+reset; transcript goalonly $((NOW_EPOCH - 60)) "$(goal_line 'run /all-auto continuously')" "$(tool_result_line)" "$(text_line $((NOW_EPOCH - 60)))"; run
+posts | grep -q "not running" || fail "goal/tool-result mentions must not count"
 
-# 5. A goal that is not /all-auto is ignored; a fresh /all-auto one elsewhere keeps it quiet.
-reset; transcript other $((NOW_EPOCH - 60)) "$(goal_line 'finish the release notes')"; run
-posts | grep -q "not running" || fail "non-all-auto goal must not count"
-transcript fresh2 $((NOW_EPOCH - 120)) "$(goal_line 'NEVER ACHIEVED. run /all-auto continuously')"; run
-[ -z "$(posts)" ] || fail "fresh /all-auto beside another goal must not alert"
+# 5. Another command is ignored; a fresh /all-auto session elsewhere keeps it quiet.
+reset; transcript other $((NOW_EPOCH - 60)) "$(invoke_line claudeqs)" "$(text_line $((NOW_EPOCH - 60)))"; run
+posts | grep -q "not running" || fail "non-all-auto session must not count"
+transcript fresh2 $((NOW_EPOCH - 120)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 120)))"; run
+[ -z "$(posts)" ] || fail "fresh /all-auto beside another session must not alert"
 
 # 6. Newest session wins: one stale, one fresh -> quiet.
-reset; transcript stale $((NOW_EPOCH - 7200)) "$(goal_line 'run /all-auto')"; transcript fresh $((NOW_EPOCH - 60)) "$(goal_line 'run /all-auto')"; run
+reset; transcript stale $((NOW_EPOCH - 7200)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 7200)))"; transcript fresh $((NOW_EPOCH - 60)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 60)))"; run
 [ -z "$(posts)" ] || fail "newest fresh session must win"
 
 # 7. DRY_RUN never posts.
 reset; DRY_RUN=1 run
 [ -z "$(posts)" ] || fail "DRY_RUN must not post"
+
+# 8. THE 2026-09-09 STALL: file mtime fresh, last assistant text 2h old -> alert. mtime is ignored.
+reset; transcript touched $((NOW_EPOCH - 60)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 7200)))"; run
+posts | grep -q "stalled" || fail "fresh mtime must not hide a stale session"
+posts | grep -q "120 min ago" || fail "age must come from the message timestamp: $(posts)"
+
+# 9. Tool-use-only records, user text, empty text blocks after the last real message do not count.
+user_line() { printf '{"type":"user","timestamp":"%s","message":{"content":"kick: re-query"}}\n' "$(iso "$1")"; }
+empty_line() { printf '{"type":"assistant","timestamp":"%s","message":{"content":[{"type":"text","text":""}]}}\n' "$(iso "$1")"; }
+reset; transcript noise $((NOW_EPOCH - 30)) "$(invoke_line all-auto)" "$(text_line $((NOW_EPOCH - 7200)))" "$(tool_line $((NOW_EPOCH - 120)))" "$(user_line $((NOW_EPOCH - 90)))" "$(empty_line $((NOW_EPOCH - 60)))"; run
+posts | grep -q "120 min ago" || fail "tool/user/empty records must not count as activity: $(posts)"
+
+# 10. /all-auto invoked but no assistant text ever -> alert stalled.
+reset; transcript silent $((NOW_EPOCH - 60)) "$(invoke_line all-auto)" "$(tool_line $((NOW_EPOCH - 60)))"; run
+posts | grep -q "stalled" || fail "a session with no text message must alert"
 
 echo "all-auto-watchdog.test.sh: all checks passed"

@@ -1,2 +1,4 @@
 .DS_Store
 .retired-*
+.env.vercel-rig
+.scratch_*

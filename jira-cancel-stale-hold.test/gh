@@ -1,0 +1,17 @@
+#!/bin/bash
+# Fake gh for jira-cancel-stale-hold.test.sh: "pr list --search KEY" reads $FIXTURES/prs-<repo>-<KEY>.txt
+# (one url per line, absent = none); "pr close URL" appends to $FIXTURES/closed.log. Any --delete-branch fails.
+echo "$*" >>"$FIXTURES/gh.log"
+case "$1 $2" in
+  "pr list")
+    repo=""; key=""
+    while [ $# -gt 0 ]; do
+      case "$1" in --repo) repo="${2#Spark-Ordering/}"; shift ;; --search) key="$2"; shift ;; esac
+      shift
+    done
+    f="$FIXTURES/prs-$repo-$key.txt"; [ -f "$f" ] && cat "$f"; exit 0 ;;
+  "pr close")
+    case "$*" in *--delete-branch*) echo "fake gh: branch deletion is forbidden" >&2; exit 9 ;; esac
+    echo "$3" >>"$FIXTURES/closed.log"; exit 0 ;;
+  *) echo "fake gh: unhandled $*" >&2; exit 9 ;;
+esac

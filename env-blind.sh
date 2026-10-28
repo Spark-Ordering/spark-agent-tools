@@ -18,6 +18,10 @@ case "$cmd" in
     require_file "$1"
     grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' "$1" | tr -d '='
     ;;
+  touch)
+    # touch <file> — create an empty env file if missing (so copy-keys has a destination)
+    if [ -f "$1" ]; then echo "$(basename "$1"): exists"; else : > "$1"; echo "$(basename "$1"): created"; fi
+    ;;
   has)
     require_file "$1"
     IFS=',' read -ra KEYS <<< "$2"
@@ -39,6 +43,12 @@ case "$cmd" in
         echo "$k: NOT FOUND in $(basename "$src")"
       fi
     done
+    ;;
+  copy-file)
+    # copy-file <src> <dst> — replace dst with src byte-for-byte, mode kept 600 (values never shown)
+    require_file "$1"
+    install -m 600 "$1" "$2"
+    echo "$(basename "$2"): copied ($(grep -cE '^[A-Za-z_][A-Za-z0-9_]*=' "$2") keys)"
     ;;
   drop-keys)
     # drop-keys <file> <KEY1,KEY2,...> — remove those keys' lines (values never shown)
@@ -141,8 +151,31 @@ open(path, 'w').write('\n'.join(out))
 print(status)
 PY
     ;;
+  value-to-file)
+    # value-to-file <src-env> <KEY> <dst-file> — write KEY's value (no trailing newline) to dst-file. Value never printed.
+    src="$1"; key="$2"; dst="$3"
+    require_file "$src"
+    python3 - "$src" "$key" "$dst" <<'PY'
+import re, sys
+src, key, dst = sys.argv[1], sys.argv[2], sys.argv[3]
+pat = re.compile(r'^(?:export\s+)?' + re.escape(key) + r'=(.*)$')
+val = None
+for line in open(src):
+    m = pat.match(line.rstrip('\n'))
+    if m:
+        v = m.group(1)
+        if v[:1] in ('"', "'") and v[-1:] == v[:1]:
+            v = v[1:-1]
+        val = v
+        break
+if val is None:
+    print(f'{key}: NOT FOUND'); sys.exit(1)
+open(dst, 'w').write(val)
+print(f'{key}: wrote {len(val)} bytes to {dst}')
+PY
+    ;;
   *)
-    echo "usage: env-blind.sh keys|has|copy-keys|ensure-kid ..."
+    echo "usage: env-blind.sh keys|has|copy-keys|value-to-file|ensure-kid ..."
     exit 1
     ;;
 esac

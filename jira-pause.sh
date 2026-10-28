@@ -5,7 +5,8 @@ set -euo pipefail
 
 source "$HOME/.config/jira-sweep.env"
 TARGET_STATUS="Hold"
-JQL='project = ENG AND sprint in openSprints() AND labels = paused AND status != "Hold"'
+# Cancelled tickets keep their paused label (jira-cancel-stale-hold.sh) and must stay Cancelled.
+JQL='project = ENG AND sprint in openSprints() AND labels = paused AND status NOT IN ("Hold", "Cancelled")'
 LOG="${JIRA_PAUSE_LOG:-$HOME/Library/Logs/jira-pause.log}"
 DRY_RUN="${DRY_RUN:-0}"
 
