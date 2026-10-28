@@ -9,7 +9,9 @@ aws-2fa.sh "restart Stage2 after the ENG-2915 deploy" -- aws elasticbeanstalk re
 1. Starts an IAM Identity Center device-code login for profile `sparkpos-ops` (the same
    mechanism the prod build uses for `sparkpos-release`).
 2. The Claude bot DMs Carlos: the reason, the exact command, the code and the approve URL.
-3. Carlos approves with his passkey (codes expire in about 10 minutes).
+3. Carlos signs in as Identity Center user `carlos` with the S22 authenticator's AWS SSO entry and
+   approves (codes expire in about 10 minutes). The S22 entry `mfa-aws.sh` uses belongs to IAM user
+   `carlos-cli`; Identity Center rejects its codes.
 4. The command runs with `AWS_PROFILE=sparkpos-ops`, then the session is logged out.
    One approval = one command.
 
