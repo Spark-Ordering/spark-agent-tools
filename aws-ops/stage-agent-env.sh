@@ -57,6 +57,17 @@ if [ "$(env_field "$ENV_NAME" Status)" = None ]; then
   echo "[stage-agent] creating $ENV_NAME from version $VERSION"
 fi
 wait_status "$ENV_NAME" Ready
+
+# The old env is only terminated once the new one is Green (Ready alone came up Red on 2026-10-28).
+wait_green() {
+  for _ in $(seq 1 45); do
+    [ "$(env_field "$ENV_NAME" Health)" = Green ] && return 0
+    sleep 20
+  done
+  echo "[stage-agent] $ENV_NAME not Green after 15 min; $OLD_ENV kept" >&2
+  return 1
+}
+wait_green
 echo "[stage-agent] $ENV_NAME $(env_field "$ENV_NAME" Status) / $(env_field "$ENV_NAME" Health) at $(env_field "$ENV_NAME" CNAME)"
 
 if [ "$(env_field "$OLD_ENV" Status)" != None ]; then
