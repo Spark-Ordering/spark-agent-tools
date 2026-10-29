@@ -23,6 +23,15 @@ api() { # api METHOD PATH [JSON_BODY]
 
 urlencode() { jq -rn --arg s "$1" '$s|@uri'; }
 
+# ENG-3010: once production's goal-loops-to-jira files this loop's ticket, this launchd job removes itself.
+retire_if_filed_by_goal_loops() { # retire_if_filed_by_goal_loops ISSUE_KEY
+  local label="com.carlos.jira-weekly-security-audit"
+  if ! api GET "/rest/api/3/issue/$1?fields=description" | grep -q 'goal-loops-to-jira'; then return 0; fi
+  log "retired: $1 was filed by goal-loops-to-jira; removing launchd job $label"
+  rm -f "$HOME/Library/LaunchAgents/$label.plist"
+  launchctl bootout "gui/$(id -u)/$label"
+}
+
 read -r -d '' DESCRIPTION <<'EOF' || true
 Filed every Wednesday 9am by spark-agent-tools/jira-weekly-security-audit.sh (ENG-2948). Find the security holes in SparkPos and fix every one of them in this ticket's PR, this week.
 
@@ -55,7 +64,11 @@ main() {
   jql="project = ENG AND summary ~ \"\\\"$SUMMARY\\\"\""
   existing="$(api GET "/rest/api/3/search/jql?jql=$(urlencode "$jql")&fields=summary&maxResults=5" \
     | jq -r --arg s "$SUMMARY" '.issues[] | select(.fields.summary == $s) | .key' | head -1)"
-  if [ -n "$existing" ]; then log "exists: $existing ($SUMMARY), skipping"; return 0; fi
+  if [ -n "$existing" ]; then
+    log "exists: $existing ($SUMMARY), skipping"
+    if [ "$DRY_RUN" != "1" ]; then retire_if_filed_by_goal_loops "$existing"; fi
+    return 0
+  fi
 
   sprint_id="$(api GET "/rest/agile/1.0/board/$BOARD_ID/sprint?state=active" | jq -r '.values[0].id')"
   if [ "$DRY_RUN" = "1" ]; then log "DRY_RUN would create:"; body_json "$sprint_id" | tee -a "$LOG"; return 0; fi

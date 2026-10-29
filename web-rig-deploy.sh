@@ -34,6 +34,11 @@ mkdir -p "$DEPLOY_DIR/$APP" "$DEPLOY_DIR/packages/menu-editor"
 rsync -a --delete --exclude .vercel --exclude node_modules --exclude .next --exclude '.env*' \
   "$APP_DIR/" "$DEPLOY_DIR/$APP/"
 rsync -a --delete --exclude node_modules "$SRC_DIR/packages/menu-editor/" "$DEPLOY_DIR/packages/menu-editor/"
+# admin's portalPermissions test imports ../portal/lib; Next 16.4's build type-checks it.
+if [ "$APP" = "admin-dashboard" ]; then
+  mkdir -p "$DEPLOY_DIR/portal/lib"
+  rsync -a --delete "$SRC_DIR/portal/lib/" "$DEPLOY_DIR/portal/lib/"
+fi
 cd "$DEPLOY_DIR"
 vercel link --project "$PROJECT" --scope "$RIG_SCOPE" --yes > /dev/null
 grep -q "prj_1U9VnykW0qMwWhEF56tINU8tzMJW\|prj_tYl3q5FCZRCPAjFcqOhqTPMow7tz" .vercel/project.json && {
