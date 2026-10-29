@@ -9,7 +9,9 @@ aws-2fa.sh "restart Stage2 after the ENG-2915 deploy" -- aws elasticbeanstalk re
 1. Starts an IAM Identity Center device-code login for profile `sparkpos-ops` (the same
    mechanism the prod build uses for `sparkpos-release`).
 2. The Claude bot DMs Carlos: the reason, the exact command, the code and the approve URL.
-3. Carlos approves with his passkey (codes expire in about 10 minutes).
+3. Carlos signs in as Identity Center user `carlos` with the S22 authenticator's AWS SSO entry and
+   approves (codes expire in about 10 minutes). The S22 entry `mfa-aws.sh` uses belongs to IAM user
+   `carlos-cli`; Identity Center rejects its codes.
 4. The command runs with `AWS_PROFILE=sparkpos-ops`, then the session is logged out.
    One approval = one command.
 
@@ -23,7 +25,17 @@ Permission set `StageOps` (account 716429146716, `aws-ops/stage-ops-policy.json`
 - update / restart / rebuild only environments named `Stage*`; create application versions;
   read and write the `elasticbeanstalk-us-east-2-716429146716` bucket;
 - CloudFormation, Auto Scaling, EC2 and ELB writes only on resources tagged
-  `elasticbeanstalk:environment-name` = `Stage*`.
+  `elasticbeanstalk:environment-name` = `Stage*`;
+- create / terminate only `Stage-agent` and the old `spark-backend-e2e` environment (ENG-2975), with the
+  create-time EC2 / Auto Scaling / ELB / CloudFormation actions EB needs and delete actions only on
+  resources tagged with those two environment names;
+- read, rename and re-policy only IAM users `stage-agent-deployer` and `spark-backend-e2e-deployer`.
+
+Stage-agent environment job (no YubiKey; preview with `--dry-run`, which only reads):
+
+```bash
+cd ~/Code/spark-agent-tools && bash aws-2fa.sh "ENG-2975 create Stage-agent, terminate spark-backend-e2e" -- bash aws-ops/stage-agent-env.sh
+```
 
 Production environments are not writable with it. A Stage operation that comes back
 `AccessDenied`: add the action to the policy and rerun setup (it updates the permission set in place).

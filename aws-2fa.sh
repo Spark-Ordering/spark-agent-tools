@@ -2,7 +2,7 @@
 # aws-2fa.sh "<why>" -- <command...>
 # Runs ONE command with the Stage-only `sparkpos-ops` AWS profile (permission set StageOps,
 # ENG-2927). Each run needs Carlos's approval: an IAM Identity Center device-code login he
-# approves on his phone with his passkey (same mechanism as the prod build's release secrets).
+# approves on his phone with the S22 authenticator (same mechanism as the prod build's release secrets).
 # The code is DM'd to him with the reason and the exact command; the session is logged out
 # when the command ends, so one approval = one command. Setup: aws-ops/setup.sh (once).
 # Exit codes: the command's own, or 2 usage, 3 profile not set up, 4 login not approved/expired.
@@ -62,7 +62,7 @@ Why: $why
 Command: \`$command_text\`
 Code: $code (expires ~$expires)
 $url
-Approve with your passkey only if this is the command you expect."
+Sign in as carlos with the S22 authenticator's AWS SSO code; approve only if this is the command you expect."
 bash "$SLACK_BOT" post "$APPROVER" "$text" >/dev/null
 echo "Waiting for approval of code $code (DM'd to $APPROVER, expires ~$expires)" >&2
 
